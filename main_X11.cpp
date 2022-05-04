@@ -7,11 +7,121 @@
 #include <chrono>
 #include <thread>
 
+#include "math.h"
 
-// Use OpenGL: https://www.khronos.org/opengl/wiki/Programming_OpenGL_in_Linux:_GLX_and_Xlib
+struct Timer {
+    std::chrono::time_point<std::chrono::high_resolution_clock> previous_timestamp;
 
-void draw() {
-    glClearColor(1.0, 1.0, 1.0, 1.0);
+    void start() {
+        previous_timestamp = std::chrono::high_resolution_clock::now();
+    }
+
+    float tick() {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
+        previous_timestamp = now;
+        if (ms > 0) {
+            std::cout << "fps: " << (1000.0/ms) << std::endl;
+        }
+        return ms/1000.f;
+    }
+
+    void sync(int ms) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = now - previous_timestamp;
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
+        }
+        previous_timestamp = now;
+    }
+};
+
+
+struct Rect {
+    float x;
+    float y;
+    float w;
+    float h;
+};
+
+struct Wall {
+    Vec2 a;
+    Vec2 b;
+};
+
+
+const int MAX_WALLS = 32;
+
+struct Room {
+    Wall walls[MAX_WALLS];
+    int n_walls;
+};
+
+struct Controls {
+    bool left = false;
+    bool right = false;
+    bool up = false;
+    bool down = false;
+};
+
+struct Player {
+    Vec2 pos;
+    float size;
+};
+
+struct GameState {
+    Room room;
+    Player player;
+    Controls controls;
+};
+
+
+const int coord_width = 100;
+const int coord_height = 100;
+
+Vec2 to_viewport(Vec2 v) {
+    float x = 2 * v.x / (float)coord_width - 1;
+    float y = - (2 * v.y / (float)coord_height - 1);
+    return  Vec2{x,y};
+}
+
+void draw_rect(Rect rect) {
+    float x0 = 2 * rect.x / (float)coord_width - 1;
+    float y0 = - (2 * rect.y / (float)coord_height - 1);
+    float x1 = 2 * (rect.x+rect.w)/(float)coord_width - 1;
+    float y1 = - (2 * (rect.y+rect.h)/(float)coord_height - 1);
+
+    glBegin(GL_LINE_LOOP);
+    glColor3f(1, 1, 1);
+    glVertex2f(x0, y0);
+    glVertex2f(x1, y0);
+    glVertex2f(x1, y1);
+    glVertex2f(x0, y1);
+    glEnd();
+}
+
+void draw_wall(Wall wall) {
+    Vec2 a = to_viewport(wall.a);
+    Vec2 b = to_viewport(wall.b);
+
+    glBegin(GL_LINES);
+    glColor3f(1,1,1);
+    glVertex2f(a.x, a.y);
+    glVertex2f(b.x, b.y);
+    glEnd();
+}
+
+void draw_player(Player player) {
+    Vec2 q = to_viewport(player.pos);
+    glPointSize(player.size);
+    glBegin(GL_POINTS);
+    glColor3f(0,0,1);
+    glVertex2f(q.x, q.y);
+    glEnd();
+}
+
+void draw(GameState state) {
+    glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glMatrixMode(GL_PROJECTION);
@@ -22,12 +132,51 @@ void draw() {
     glLoadIdentity();
     gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
 
-    glBegin(GL_QUADS);
-    glColor3f(1., 0., 0.); glVertex3f(-.75, -.75, 0.);
-    glColor3f(0., 1., 0.); glVertex3f( .75, -.75, 0.);
-    glColor3f(0., 0., 1.); glVertex3f( .75,  .75, 0.);
-    glColor3f(1., 1., 0.); glVertex3f(-.75,  .75, 0.);
-    glEnd();
+    for (int i = 0; i < state.room.n_walls; ++i) {
+        draw_wall(state.room.walls[i]);
+    }
+
+    draw_player(state.player);
+}
+
+void update(GameState *state, float dt) {
+    Vec2 player = state->player.pos;
+    float d_player = 30;
+    if (state->controls.left) {
+        player.x -= d_player * dt;
+    }
+    if (state->controls.right) {
+        player.x += d_player * dt;
+    }
+    if (state->controls.up) {
+        player.y -= d_player * dt;
+    }
+    if (state->controls.down) {
+        player.y += d_player * dt;
+    }
+
+
+    for (int i = 0; i < state->room.n_walls; ++i) {
+        Wall w = state->room.walls[i];
+
+        Vec2 BA = w.b - w.a;
+        Vec2 PA = player - w.a;
+
+        if (dot(BA, PA) < 0 || dot(-BA, player - w.b) < 0) {
+            continue;
+        }
+
+        Vec2 perp = Vec2{BA.y, -BA.x};
+        float dist_prev = dot((state->player.pos - w.a), perp);
+        float dist_next = dot(PA, perp);
+        if ((dist_prev > 0 && dist_next <= 0) || 
+                (dist_prev < 0 && dist_next >= 0)) {
+            player = state->player.pos;
+            break;
+        }
+    }
+
+    state->player.pos = player;
 }
 
 int main(int argc, char** argv) {
@@ -57,7 +206,7 @@ int main(int argc, char** argv) {
 
     XSetWindowAttributes swa;
     swa.colormap = cmap;
-    swa.event_mask = ExposureMask | KeyPressMask;
+    swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask;
 
     Window w = XCreateWindow(d, root, 0, 0, width, height, 0, vi->depth, InputOutput, vi->visual, CWColormap | CWEventMask, &swa);
     XMapWindow(d, w);
@@ -65,21 +214,29 @@ int main(int argc, char** argv) {
 
     GLXContext glc = glXCreateContext(d, vi, NULL, GL_TRUE);
     glXMakeCurrent(d, w, glc);
-    // Visual* vis = XDefaultVisual(d, s);
-    // Window w = XCreateSimpleWindow(d, XDefaultRootWindow(d), 0, 0, width, height, 1, XBlackPixel(d, s), XWhitePixel(d, s));
-    // XSelectInput(d, w,
-    //         ExposureMask
-    //         | KeyPressMask
-    //         | KeyReleaseMask);
-    // XMapWindow(d, w);
 
-    // XGCValues xgc_values;
-    // GC gc = XCreateGC(d, w, 0, &xgc_values);
+    GameState state{
+        .room = Room{
+            .walls = {
+                Wall{Vec2{10, 10}, Vec2{60, 10}},
+                Wall{Vec2{60, 10}, Vec2{60, 60}},
+                Wall{Vec2{60, 60}, Vec2{10, 60}},
+                Wall{Vec2{10, 60}, Vec2{10, 10}},
+            },
+            .n_walls = 5,
+        },
+        .player = Player{
+            .pos = Vec2{15, 15},
+            .size = 10,
+        },
+    };
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_POINT_SMOOTH);
 
-    int fps_60 = 1000/60;
-    auto previous_timestamp = std::chrono::high_resolution_clock::now();
+    Timer timer_dt;
+    timer_dt.start();
+
     XEvent e;
     for (;;) {
         while (XPending(d) > 0) {
@@ -89,27 +246,39 @@ int main(int argc, char** argv) {
                 KeySym keysym;
                 XLookupString(&e.xkey, NULL, 0, &keysym, NULL);
 
-                if (keysym == XK_Escape) {
-                    return 0;
+                switch (keysym) {
+                    case XK_Escape: return 0; break;
+                    case XK_Left: state.controls.left = true; break;
+                    case XK_Right: state.controls.right = true; break;
+                    case XK_Up: state.controls.up = true; break;
+                    case XK_Down: state.controls.down = true; break;
                 }
+
+                std::cout << "Key down: " << XKeysymToString(keysym) << std::endl;
+
             } else if (e.type == KeyRelease) {
                 KeySym keysym;
                 XLookupString(&e.xkey, NULL, 0, &keysym, NULL);
+
+                switch (keysym) {
+                    case XK_Left: state.controls.left = false; break;
+                    case XK_Right: state.controls.right = false; break;
+                    case XK_Up: state.controls.up = false; break;
+                    case XK_Down: state.controls.down = false; break;
+                }
+
+                std::cout << "Key up:   " << XKeysymToString(keysym) << std::endl;
             }
         }
+
+        float dt = timer_dt.tick();
+        update(&state, dt);
 
         XWindowAttributes gwa;
         XGetWindowAttributes(d, w, &gwa);
         glViewport(0, 0, gwa.width, gwa.height);
-        draw();
+        draw(state);
         glXSwapBuffers(d, w);
-
-        auto now = std::chrono::high_resolution_clock::now();
-        auto elapsed = now - previous_timestamp;
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < fps_60) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(fps_60) - elapsed);
-        }
-        previous_timestamp = std::chrono::high_resolution_clock::now();
     }
 
     return 0;
