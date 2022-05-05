@@ -6,6 +6,7 @@
 #include <bitset>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #include "math.h"
 
@@ -20,9 +21,9 @@ struct Timer {
         auto now = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
         previous_timestamp = now;
-        if (ms > 0) {
-            std::cout << "fps: " << (1000.0/ms) << std::endl;
-        }
+        // if (ms > 0) {
+        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
+        // }
         return ms/1000.f;
     }
 
@@ -49,12 +50,17 @@ struct Wall {
     Vec2 b;
 };
 
+struct Door {
+    Vec2 a;
+    Vec2 b;
+    int room0;
+    int room1;
+};
 
 const int MAX_WALLS = 32;
 
 struct Room {
-    Wall walls[MAX_WALLS];
-    int n_walls;
+    std::vector<Wall> walls;
 };
 
 struct Controls {
@@ -70,7 +76,9 @@ struct Player {
 };
 
 struct GameState {
-    Room room;
+    std::vector<Room> rooms;
+    int current_room;
+    Door door;
     Player player;
     Controls controls;
 };
@@ -132,11 +140,32 @@ void draw(GameState state) {
     glLoadIdentity();
     gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
 
-    for (int i = 0; i < state.room.n_walls; ++i) {
-        draw_wall(state.room.walls[i]);
+    Room room = state.rooms[state.current_room];
+    for (auto w : room.walls) {
+        draw_wall(w);
     }
 
     draw_player(state.player);
+}
+
+bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
+    Vec2 BA = normalize(line_b - line_a);
+    Vec2 PA = normalize(pos_next - line_a);
+    Vec2 PB = normalize(pos_next - line_b);
+
+    if (dot(BA, PA) < 0 || dot(-BA, PB) < 0) {
+        return false;
+    }
+
+    Vec2 perp = Vec2{BA.y, -BA.x};
+    float dist_prev = dot((pos_prev - line_a), perp);
+    float dist_next = dot(PA, perp);
+    if ((dist_prev > 0 && dist_next <= 0) || 
+            (dist_prev < 0 && dist_next >= 0)) {
+        return true;
+    }
+
+    return false;
 }
 
 void update(GameState *state, float dt) {
@@ -156,25 +185,25 @@ void update(GameState *state, float dt) {
     }
 
 
-    for (int i = 0; i < state->room.n_walls; ++i) {
-        Wall w = state->room.walls[i];
-
-        Vec2 BA = w.b - w.a;
-        Vec2 PA = player - w.a;
-
-        if (dot(BA, PA) < 0 || dot(-BA, player - w.b) < 0) {
-            continue;
-        }
-
-        Vec2 perp = Vec2{BA.y, -BA.x};
-        float dist_prev = dot((state->player.pos - w.a), perp);
-        float dist_next = dot(PA, perp);
-        if ((dist_prev > 0 && dist_next <= 0) || 
-                (dist_prev < 0 && dist_next >= 0)) {
+    Room room = state->rooms[state->current_room];
+    for (int i = 0; i < (int)room.walls.size(); ++i) {
+        Wall w = room.walls[i];
+        if (crossed_line(state->player.pos, player, w.a, w.b)) {
             player = state->player.pos;
             break;
         }
     }
+
+    Door door = state->door;
+    if (crossed_line(state->player.pos, player, door.a, door.b)) {
+        if (state->current_room == door.room0) {
+            state->current_room = door.room1;
+        } else {
+            state->current_room = door.room0;
+        }
+    }
+
+    printf("current room: %d\n", state->current_room);
 
     state->player.pos = player;
 }
@@ -216,15 +245,29 @@ int main(int argc, char** argv) {
     glXMakeCurrent(d, w, glc);
 
     GameState state{
-        .room = Room{
-            .walls = {
-                Wall{Vec2{10, 10}, Vec2{60, 10}},
-                Wall{Vec2{60, 10}, Vec2{60, 60}},
-                Wall{Vec2{60, 60}, Vec2{10, 60}},
-                Wall{Vec2{10, 60}, Vec2{10, 10}},
+        .rooms = {
+            Room{
+                .walls = {
+                    Wall{Vec2{10, 10}, Vec2{30, 10}},
+                    Wall{Vec2{30, 10}, Vec2{30, 15}},
+                    Wall{Vec2{30, 20}, Vec2{30, 30}},
+                    Wall{Vec2{30, 30}, Vec2{10, 30}},
+                    Wall{Vec2{10, 30}, Vec2{10, 10}},
+                    Wall{Vec2{20, 15}, Vec2{20, 20}},
+                }
             },
-            .n_walls = 5,
+            Room{
+                .walls = {
+                    Wall{Vec2{30, 10}, Vec2{60, 10}},
+                    Wall{Vec2{60, 10}, Vec2{60, 30}},
+                    Wall{Vec2{60, 30}, Vec2{30, 30}},
+                    Wall{Vec2{30, 30}, Vec2{30, 20}},
+                    Wall{Vec2{30, 15}, Vec2{30, 10}},
+                }
+            },
         },
+        .current_room = 0,
+        .door = Door{Vec2{30,15}, Vec2{30, 20}, 0, 1},
         .player = Player{
             .pos = Vec2{15, 15},
             .size = 10,
@@ -283,3 +326,14 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
+
+// Game features
+// - Limited vision
+// - No gravity outdoor (use SAS, have to use environment or propellant to move)
+// - Go to other room
+//
+// Game story
+// - In a spaceship, explore
+// - Magnetic floor (simulate gravity)
+// - Can go outdoor
