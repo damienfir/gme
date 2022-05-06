@@ -1,6 +1,6 @@
-build/main: main_X11.cpp
+build/main: main_glfw.cpp
 	mkdir build || true
-	g++ -g -lX11 -lGL -lGLU -lGLEW -std=c++17 -Wall $^ -o $@
+	g++ -g -lglfw -lGL -lGLU -lGLEW -std=c++17 -Wall $^ -o $@
 
 clean:
 	rm -r build/main

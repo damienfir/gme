@@ -1,6 +1,5 @@
-#include <X11/Xlib.h>
-#include <GL/glx.h>
-#include <GL/gl.h>
+#include <GLFW/glfw3.h>
+// #include <GL/gl.h>
 #include <GL/glu.h>
 #include <iostream>
 #include <bitset>
@@ -124,11 +123,13 @@ struct GameState {
     Player player;
     Controls controls;
     bool in_space;
+    bool running;
 };
 
 
 const int coord_width = 100;
 const int coord_height = 100;
+GameState state;
 
 Vec2 to_viewport(Vec2 v) {
     float x = 2 * v.x / (float)coord_width - 1;
@@ -298,43 +299,45 @@ void update(GameState *state, float dt) {
     state->player = player;
 }
 
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        switch (key) {
+            case GLFW_KEY_ESCAPE: state.running = false; break;
+            case GLFW_KEY_LEFT: state.controls.left = true; break;
+            case GLFW_KEY_RIGHT: state.controls.right = true; break;
+            case GLFW_KEY_UP: state.controls.up = true; break;
+            case GLFW_KEY_DOWN: state.controls.down = true; break;
+        }
+
+    } else if (action == GLFW_RELEASE) {
+        switch (key) {
+            case GLFW_KEY_LEFT: state.controls.left = false; break;
+            case GLFW_KEY_RIGHT: state.controls.right = false; break;
+            case GLFW_KEY_UP: state.controls.up = false; break;
+            case GLFW_KEY_DOWN: state.controls.down = false; break;
+        }
+    }
+}
+
 int main(int argc, char** argv) {
 
-    Display* d = XOpenDisplay(nullptr);
-    if (d == nullptr) {
-        std::cout << "error" << std::endl;
-    }
-    
-    const int width = 1024;
-    const int height = 1024;
-
-    int s = XDefaultScreen(d);
-    std::cout << "all planes: " << std::bitset<sizeof(unsigned long)*8>(XAllPlanes()) << std::endl;
-    std::cout << "Default depth: " << XDefaultDepth(d, s) << std::endl;
-
-    Window root = DefaultRootWindow(d);
-
-    GLint att[] = { GLX_RGBA, GLX_DEPTH_SIZE, 24, GLX_DOUBLEBUFFER, None };
-    XVisualInfo* vi = glXChooseVisual(d, 0, att);
-    if (vi == NULL) {
-        std::cerr << "Error initializing visualinfo\n";
+    if (!glfwInit()) {
+        std::cerr << "Cannot initialize GLFW\n";
         return 1;
     }
 
-    Colormap cmap = XCreateColormap(d, root, vi->visual, AllocNone);
+    const int width = 1024;
+    const int height = 1024;
 
-    XSetWindowAttributes swa;
-    swa.colormap = cmap;
-    swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask;
+    GLFWwindow * window = glfwCreateWindow(width, height, "Awesome game", NULL, NULL);
+    if (!window) {
+        std::cerr << "Cannot open window\n";
+        return 1;
+    }
 
-    Window w = XCreateWindow(d, root, 0, 0, width, height, 0, vi->depth, InputOutput, vi->visual, CWColormap | CWEventMask, &swa);
-    XMapWindow(d, w);
-    XStoreName(d, w, "Awesome game");
+    glfwMakeContextCurrent(window);
 
-    GLXContext glc = glXCreateContext(d, vi, NULL, GL_TRUE);
-    glXMakeCurrent(d, w, glc);
-
-    GameState state{
+    state = {
         .rooms = {
             Room{
                 .walls = {
@@ -372,53 +375,26 @@ int main(int argc, char** argv) {
 
     Timer timer_dt;
     timer_dt.start();
+    
+    glfwSetKeyCallback(window, key_callback);
 
-    XEvent e;
-    for (;;) {
-        while (XPending(d) > 0) {
-            XNextEvent(d, &e);
-
-            if (e.type == KeyPress) {
-                KeySym keysym;
-                XLookupString(&e.xkey, NULL, 0, &keysym, NULL);
-
-                switch (keysym) {
-                    case XK_Escape: return 0; break;
-                    case XK_Left: state.controls.left = true; break;
-                    case XK_Right: state.controls.right = true; break;
-                    case XK_Up: state.controls.up = true; break;
-                    case XK_Down: state.controls.down = true; break;
-                }
-
-                std::cout << "Key down: " << XKeysymToString(keysym) << std::endl;
-
-            } else if (e.type == KeyRelease) {
-                KeySym keysym;
-                XLookupString(&e.xkey, NULL, 0, &keysym, NULL);
-
-                switch (keysym) {
-                    case XK_Left: state.controls.left = false; break;
-                    case XK_Right: state.controls.right = false; break;
-                    case XK_Up: state.controls.up = false; break;
-                    case XK_Down: state.controls.down = false; break;
-                }
-
-                std::cout << "Key up:   " << XKeysymToString(keysym) << std::endl;
-            }
-        }
-
+    // XWindowAttributes gwa;
+    // XGetWindowAttributes(d, w, &gwa);
+    // glViewport(0, 0, gwa.width, gwa.height);
+    
+    state.running = true;
+    while (state.running) {
         float dt = timer_dt.tick();
         update(&state, dt);
 
-        XWindowAttributes gwa;
-        XGetWindowAttributes(d, w, &gwa);
-        glViewport(0, 0, gwa.width, gwa.height);
         draw(state);
-        glXSwapBuffers(d, w);
+        glfwSwapBuffers(window);
+        glfwPollEvents();
     }
 
     return 0;
 }
+
 
 #if 0
 
@@ -440,3 +416,4 @@ Game story
 - Can go outdoor
 
 #endif
+
