@@ -107,6 +107,8 @@ struct Controls {
     bool right = false;
     bool up = false;
     bool down = false;
+    bool use_js;
+    Vec2 js;
 };
 
 struct Player {
@@ -232,37 +234,46 @@ void update(GameState *state, float dt) {
     Player player = state->player;
 
     if (!state->in_space) {
-        float player_speed = 30;
-        if (state->controls.left) {
-            player.pos.x -= player_speed * dt;
-        }
-        if (state->controls.right) {
-            player.pos.x += player_speed * dt;
-        }
-        if (state->controls.up) {
-            player.pos.y -= player_speed * dt;
-        }
-        if (state->controls.down) {
-            player.pos.y += player_speed * dt;
+        if (state->controls.use_js) {
+            player.vel.x = state->controls.js.x;
+            player.vel.y = state->controls.js.y;
+        } else {
+            float player_speed = 30;
+            if (state->controls.left) {
+                player.pos.x -= player_speed * dt;
+            }
+            if (state->controls.right) {
+                player.pos.x += player_speed * dt;
+            }
+            if (state->controls.up) {
+                player.pos.y -= player_speed * dt;
+            }
+            if (state->controls.down) {
+                player.pos.y += player_speed * dt;
+            }
         }
 
     } else {
-        float player_acc = 20;
-        if (state->controls.left) {
-            player.vel.x -= player_acc * dt;
+        if (state->controls.use_js) {
+            player.vel.x += state->controls.js.x * 0.03;
+            player.vel.y += state->controls.js.y * 0.03;
+        } else {
+            float player_acc = 20;
+            if (state->controls.left) {
+                player.vel.x -= player_acc * dt;
+            }
+            if (state->controls.right) {
+                player.vel.x += player_acc * dt;
+            }
+            if (state->controls.up) {
+                player.vel.y -= player_acc * dt;
+            }
+            if (state->controls.down) {
+                player.vel.y += player_acc * dt;
+            }
         }
-        if (state->controls.right) {
-            player.vel.x += player_acc * dt;
-        }
-        if (state->controls.up) {
-            player.vel.y -= player_acc * dt;
-        }
-        if (state->controls.down) {
-            player.vel.y += player_acc * dt;
-        }
-
-        player.pos = player.pos + player.vel * dt;
     }
+    player.pos = player.pos + player.vel * dt;
 
 
     for (auto & room : state->rooms) {
@@ -293,8 +304,8 @@ void update(GameState *state, float dt) {
         }
     }
 
-    printf("current room: %d\n", state->current_room);
-    printf("in space: %d\n", state->in_space);
+    // printf("current room: %d\n", state->current_room);
+    // printf("in space: %d\n", state->in_space);
 
     state->player = player;
 }
@@ -316,6 +327,23 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             case GLFW_KEY_UP: state.controls.up = false; break;
             case GLFW_KEY_DOWN: state.controls.down = false; break;
         }
+    }
+}
+
+float thresholded(float x, float t) {
+    if (x < t && x > -t) return 0;
+    return x;
+}
+
+void joystick_control(int jid) {
+    GLFWgamepadstate gp;
+    if (glfwGetGamepadState(jid, &gp)) {
+        float x = gp.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
+        float y = gp.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+        printf("x: %.3f, y: %.3f\n", x, y);
+
+        state.controls.js.x = thresholded(x, 0.1) * 30;
+        state.controls.js.y = thresholded(y, 0.1) * 30;
     }
 }
 
@@ -378,12 +406,15 @@ int main(int argc, char** argv) {
     
     glfwSetKeyCallback(window, key_callback);
 
-    // XWindowAttributes gwa;
-    // XGetWindowAttributes(d, w, &gwa);
     // glViewport(0, 0, gwa.width, gwa.height);
     
     state.running = true;
     while (state.running) {
+        if (glfwJoystickIsGamepad(GLFW_JOYSTICK_1)) {
+            state.controls.use_js = true;
+            joystick_control(GLFW_JOYSTICK_1);
+        }
+
         float dt = timer_dt.tick();
         update(&state, dt);
 
