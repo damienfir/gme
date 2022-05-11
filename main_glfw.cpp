@@ -149,9 +149,30 @@ struct Texture {
 };
 
 struct StarField {
-    std::vector<Vec2> position;
-    std::vector<float> size;
-    std::vector<float> brightness;
+    int n_stars;
+    Vec2* position;
+    float* size;
+    float* brightness;
+};
+
+struct Water {
+    int w;
+    int h;
+    float* heightmap;
+    float* vel;
+    float* other;
+
+    float& at(int x, int y) {
+        return heightmap[y * w + x];
+    }
+
+    float& other_at(int x, int y) {
+        return other[y * w + x];
+    }
+
+    float& vel_at(int x, int y) {
+        return vel[y * w + x];
+    }
 };
 
 struct GameState {
@@ -165,10 +186,11 @@ struct GameState {
     bool running;
     Texture tex;
     StarField stars;
+    Water water;
 };
 
-const int width = 1024;
-const int height = 1024;
+const int width = 128;
+const int height = 128;
 GameState state;
 
 
@@ -179,13 +201,13 @@ float randf() {
 void generate_star_field() {
     StarField& f = state.stars;
 
-    const int n_stars = 500;
+    f.n_stars = 500;
 
-    f.position.resize(n_stars);
-    f.brightness.resize(n_stars);
-    f.size.resize(n_stars);
+    f.position = (Vec2*)malloc(f.n_stars*sizeof(Vec2));
+    f.brightness = (float*)malloc(f.n_stars*sizeof(float));
+    f.size = (float*)malloc(f.n_stars*sizeof(float));
 
-    for (int i = 0; i < n_stars; ++i) {
+    for (int i = 0; i < f.n_stars; ++i) {
         f.position[i] = Vec2{randf()*width, randf()*height};
         f.size[i] = randf()*10;
         f.brightness[i] = randf();
@@ -194,18 +216,6 @@ void generate_star_field() {
 
 
 void init_gradient() {
-    Image* buf = &state.tex.image;
-    RGBA tl{1, 0, 0, 1};
-    RGBA tr{0, 1, 0, 1};
-    RGBA br{0, 0, 1, 1};
-    RGBA bl{1, 0, 1, 1};
-
-    for (int y = 0; y < buf->h; ++y)
-        for (int x = 0; x < buf->w; ++x) {
-            float fx = x/(float)buf->w;
-            float fy = y/(float)buf->h;
-            buf->at(x, y) = (1 - fx) * ((1-fy) * tl + fy * bl) + fx * ((1-fy) * tr + fy * br);
-        }
 }
 
 void init_texture() {
@@ -227,6 +237,54 @@ void init_texture() {
         .h = h,
         .data = (RGBA*)malloc(w*h*sizeof(RGBA)),
     };
+}
+
+
+void init_water() {
+    state.water.h = height;
+    state.water.w = width;
+    state.water.heightmap = (float*)malloc(height*width*sizeof(float));
+    state.water.other = (float*)malloc(height*width*sizeof(float));
+    state.water.vel = (float*)malloc(height*width*sizeof(float));
+    for (int i = 0; i < width*height; ++i) {
+        state.water.heightmap[i] = 1;
+        state.water.vel[i] = 0;
+    }
+
+    state.water.at(50, 50) = 4;
+}
+
+void update_water(float dt) {
+    Water& w = state.water;
+    for (int y = 0; y < w.h; ++y)
+        for (int x = 0; x < w.w; ++x) {
+            const float c2 = 100;
+
+            int x0 = clamp(x-1, 0, w.w-1);
+            int x1 = clamp(x+1, 0, w.w-1);
+            int y0 = clamp(y-1, 0, w.h-1);
+            int y1 = clamp(y+1, 0, w.h-1);
+
+            float sq2 = 1/std::sqrt(2);
+            float s = 4*sq2 + 4;
+
+            float f = c2 * (
+                    sq2 * w.at(x0, y0)
+                    + sq2 * w.at(x0, y1)
+                    + sq2 * w.at(x1, y1)
+                    + sq2 * w.at(x1, y0)
+                    + w.at(x0, y)
+                    + w.at(x1, y)
+                    + w.at(x, y0)
+                    + w.at(x, y1)
+                    - s * w.at(x, y)
+                    ) / s;
+            w.vel_at(x, y) += f * dt;
+            w.vel_at(x, y) *= 0.99;
+            w.other_at(x, y) = w.at(x, y) + w.vel_at(x, y) * dt;
+        }
+
+    std::swap(w.heightmap, w.other);
 }
 
 void update_texture(float dt) {
@@ -348,39 +406,42 @@ void init_solid(RGBA c = {}) {
     for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
 }
 
-void draw_starfield() {
-    auto sf = state.stars;
-    for (size_t i = 0; i < sf.position.size(); ++i) {
-        float b = sf.brightness[i];
-        RGBA c = RGBA{b, b, b, b};
-        float size = 1 * sf.size[i];
-        draw_point(sf.position[i], c, size);
-    }
-}
-
 void draw() {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // init_solid(&state.tex.image, RGBA{1,0,0,1});
+    Image* im = &state.tex.image;
+    RGBA tl{1, 0, 0, 1};
+    RGBA tr{0, 1, 0, 1};
+    RGBA br{0, 0, 1, 1};
+    RGBA bl{1, 0, 1, 1};
 
-    init_gradient();
+    for (int y = 0; y < im->h; ++y)
+        for (int x = 0; x < im->w; ++x) {
+            float fx = x/(float)im->w;
+            float fy = y/(float)im->h;
+            im->at(x, y) = (1 - fx) * ((1-fy) * tl + fy * bl) + fx * ((1-fy) * tr + fy * br);
+        }
 
-    // for (Room room : state.rooms) {
-    //     for (Wall w : room.walls) {
-    //         draw_line(&state.tex.image, w.a, w.b, RGBA{1, 1, 1, 1}, 1);
-    //     }
+
+    // Draw water on gradient
+    Water* w = &state.water;
+    for (int y = 0; y < im->h; ++y)
+        for (int x = 0; x < im->w; ++x) {
+            // printf("water %d, %d: %f\n", x, y, w->at(x, y));
+            im->at(x, y) = clamp01(0.5 * w->at(x, y) * RGBA{0, 0, 1, 1});
+        }
+
+
+    // Draw starfield
+    // auto sf = state.stars;
+    // for (int i = 0; i < sf.n_stars; ++i) {
+    //     float b = sf.brightness[i];
+    //     RGBA c = RGBA{b, b, b, b};
+    //     float size = 1 * sf.size[i];
+    //     draw_point(sf.position[i], c, size);
     // }
 
-
-    // for (Door door : state.doors) {
-    //     draw_door(door);
-    // }
-
-    // draw_point(&state.tex.image, state.player.pos, RGBA{0, 0, 1, 1}, state.player.size);
-
-    draw_starfield();
-    
     draw_texture();
 }
 
@@ -484,6 +545,7 @@ void update(float dt) {
     state.player = player;
 
     update_texture(dt);
+    update_water(dt);
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -576,6 +638,7 @@ int main(int argc, char** argv) {
     };
 
     init_texture();
+    init_water();
     generate_star_field();
 
     glEnable(GL_DEPTH_TEST);

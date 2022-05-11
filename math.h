@@ -81,3 +81,13 @@ RGBA clamp01(RGBA a) {
     b.a = std::min(1.f, std::max(0.f, a.a));
     return b;
 }
+
+int modulo_positive(int x, int m) {
+    int y = x % m;
+    if (y < 0) return y + m;
+    return y;
+}
+
+int clamp(int x, int mi, int ma) {
+    return std::min(ma, std::max(mi, x));
+}
