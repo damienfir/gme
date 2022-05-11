@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <vector>
+#include <png.h>
 
 #include "math.h"
 
@@ -20,9 +21,9 @@ struct Timer {
         auto now = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
         previous_timestamp = now;
-        // if (ms > 0) {
-        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
-        // }
+        if (ms > 0) {
+            std::cout << "fps: " << (1000.0/ms) << std::endl;
+        }
         return ms/1000.f;
     }
 
@@ -117,6 +118,25 @@ struct Player {
     float size;
 };
 
+struct Sprite {
+    GLuint tex;
+    float x0;
+    float y0;
+    float x1;
+    float y1;
+};
+
+struct Buffer {
+    int w;
+    int h;
+    unsigned char* data;
+};
+
+struct Texture {
+    GLuint id;
+    Buffer buffer;
+};
+
 struct GameState {
     std::vector<Room> rooms;
     int current_room;
@@ -126,88 +146,138 @@ struct GameState {
     Controls controls;
     bool in_space;
     bool running;
+    Texture tex;
 };
-
 
 const int coord_width = 100;
 const int coord_height = 100;
 GameState state;
 
-Vec2 to_viewport(Vec2 v) {
-    float x = 2 * v.x / (float)coord_width - 1;
-    float y = - (2 * v.y / (float)coord_height - 1);
-    return  Vec2{x,y};
+
+Texture make_texture() {
+    Texture tex;
+    glGenTextures(1, &tex.id);
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int w = 128;
+    int h = 128;
+    tex.buffer = {
+        .w = w,
+        .h = h,
+        .data = (unsigned char*)malloc(w*h*3*sizeof(unsigned char)),
+    };
+
+
+    unsigned char* data = tex.buffer.data;
+    for (int i = 0; i < h*w*3; ++i) data[i] = 0;
+
+    // for (int y = 0; y < h; ++y)
+    //     for (int x = 0; x < w; ++x) {
+    //         data[y*w*3+x*3+0] = 255.f*x/w;
+    //         data[y*w*3+x*3+1] = 255.f*(h-y)/h;
+    //         data[y*w*3+x*3+2] = 255.f*(w-x)*y/(w*h);
+    //     }
+
+    return tex;
 }
 
-void draw_rect(Rect rect) {
-    float x0 = 2 * rect.x / (float)coord_width - 1;
-    float y0 = - (2 * rect.y / (float)coord_height - 1);
-    float x1 = 2 * (rect.x+rect.w)/(float)coord_width - 1;
-    float y1 = - (2 * (rect.y+rect.h)/(float)coord_height - 1);
-
-    glBegin(GL_LINE_LOOP);
-    glColor3f(1, 1, 1);
-    glVertex2f(x0, y0);
-    glVertex2f(x1, y0);
-    glVertex2f(x1, y1);
-    glVertex2f(x0, y1);
-    glEnd();
+void update_texture(float dt) {
+    // int w = state.tex.buffer.w;
+    // int h = state.tex.buffer.h;
+    // unsigned char* data = state.tex.buffer.data;
+    // int shift = dt*100;
+    // printf("shift: %d\n", shift);
+    // for (int y = 0; y < h; ++y)
+    //     for (int x = 0; x < w; ++x) {
+    //         data[y*w*3+x*3+0] = (data[y*w*3+x*3+0] + shift*2) % 255;
+    //         data[y*w*3+x*3+1] = (data[y*w*3+x*3+1] - shift) % 255;
+    //         data[y*w*3+x*3+2] = (data[y*w*3+x*3+2] + shift) % 255;
+    //     }
 }
 
-void draw_wall(Wall wall) {
-    Vec2 a = to_viewport(wall.a);
-    Vec2 b = to_viewport(wall.b);
+void draw_line(Buffer* buf, Vec2 a, Vec2 b, Vec3 color, float thickness) {
+    float t = thickness/2;
+    int x0 = std::floor(std::min(a.x, b.x) - t + 0.5);
+    int y0 = std::floor(std::min(a.y, b.y) - t + 0.5);
+    int x1 = std::ceil(std::max(a.x, b.x) + t - 0.5);
+    int y1 = std::ceil(std::max(a.y, b.y) + t - 0.5);
+    Vec2 ba = normalize(b - a);
+    Vec2 normal = Vec2{-ba.y, ba.x};
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x) {
+            const int ss = 4;
+            const float factor = 1.f/(ss*ss);
+            const float offset = 1.f/(ss*2);
+            float value = 0;
+            Vec2 p{x - 0.5, y - 0.5};
+            for (int yi = 0; yi < ss; ++yi) 
+                for (int xi = 0; xi < ss; ++xi) {
+                    Vec2 xy = p + Vec2{offset + xi*2.f*offset, offset + yi*2.f*offset};
+                    float distance = std::abs(dot(xy - a, normal));
+                    if (distance < t) {
+                        value += factor;
+                    }
+                }
 
-    glBegin(GL_LINES);
-    glColor3f(1,1,1);
-    glVertex2f(a.x, a.y);
-    glVertex2f(b.x, b.y);
-    glEnd();
+            buf->data[y*buf->w*3 + x*3 + 0] = value * color.x * 255;
+            buf->data[y*buf->w*3 + x*3 + 1] = value * color.y * 255;
+            buf->data[y*buf->w*3 + x*3 + 2] = value * color.z * 255;
+        }
 }
 
-void draw_door(Door door) {
-    Vec2 a = to_viewport(door.hinge);
-    Vec2 b = to_viewport(door.end());
+void draw_texture(Texture tex) {
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGB,
+        tex.buffer.w,
+        tex.buffer.h,
+        0,
+        GL_RGB,
+        GL_UNSIGNED_BYTE,
+        tex.buffer.data
+    );
 
-    glBegin(GL_LINES);
-    glColor3f(0.5, 0.5, 0.5);
-    glVertex2f(a.x, a.y);
-    glVertex2f(b.x, b.y);
-    glEnd();
-}
+    glEnable(GL_TEXTURE_2D);
 
-void draw_player(Player player) {
-    Vec2 q = to_viewport(player.pos);
-    glPointSize(player.size);
-    glBegin(GL_POINTS);
-    glColor3f(0,0,1);
-    glVertex2f(q.x, q.y);
+    glBegin(GL_QUADS);
+    glTexCoord2d(0, 1); glVertex2d(-1, -1);
+    glTexCoord2d(1, 1); glVertex2d(1, -1);
+    glTexCoord2d(1, 0); glVertex2d(1, 1);
+    glTexCoord2d(0, 0); glVertex2d(-1, 1);
     glEnd();
+    glDisable(GL_TEXTURE_2D);
 }
 
 void draw(GameState state) {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(-1., 1., -1., 1., 1., 20.);
+    // glMatrixMode(GL_PROJECTION);
+    // glLoadIdentity();
+    // glOrtho(-1., 1., -1., 1., 1., 20.);
 
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
+    // glMatrixMode(GL_MODELVIEW);
+    // glLoadIdentity();
+    // gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
 
-    for (Room room : state.rooms) {
-        for (Wall w : room.walls) {
-            draw_wall(w);
-        }
-    }
+    draw_line(&state.tex.buffer, Vec2{1,1}, Vec2{34, 34}, Vec3{1,1,1}, 1);
+    draw_texture(state.tex);
 
-    for (Door door : state.doors) {
-        draw_door(door);
-    }
+    // for (Room room : state.rooms) {
+    //     for (Wall w : room.walls) {
+    //         draw_wall(w);
+    //     }
+    // }
 
-    draw_player(state.player);
+    // for (Door door : state.doors) {
+    //     draw_door(door);
+    // }
+
+    // draw_player_sprite(state.player);
 }
 
 bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
@@ -308,6 +378,8 @@ void update(GameState *state, float dt) {
     // printf("in space: %d\n", state->in_space);
 
     state->player = player;
+
+    update_texture(dt);
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -398,6 +470,14 @@ int main(int argc, char** argv) {
         },
     };
 
+    // ImageRead image = read_png("resources/sprites.png");
+    // if (!image.valid) {
+    //     fprintf(stderr, "Error reading image: %s\n", image.message.c_str());
+    //     return 1;
+    // }
+    // state.sprite= make_sprite(image);
+    state.tex = make_texture();
+
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
 
@@ -436,6 +516,7 @@ Game features
 - Star behind
 - Generate rooms procedurally
 - Gamepad control
+- Sprites
 
 Done
 - No gravity outdoor (use SAS, have to use environment or propellant to move)

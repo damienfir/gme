@@ -49,3 +49,9 @@ Vec2 rotate(Vec2 v, float rad) {
     w.y = v.y * cos(rad) - v.x * sin(rad);
     return w;
 }
+
+struct Vec3 {
+    float x;
+    float y;
+    float z;
+};
