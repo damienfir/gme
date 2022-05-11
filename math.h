@@ -50,8 +50,34 @@ Vec2 rotate(Vec2 v, float rad) {
     return w;
 }
 
-struct Vec3 {
-    float x;
-    float y;
-    float z;
+struct RGBA {
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    float a = 0;
 };
+
+RGBA operator*(float a, RGBA v) {
+    return RGBA{v.r*a, v.g*a, v.b*a, v.a*a};
+}
+
+RGBA operator+(RGBA a, RGBA b) {
+    return RGBA{a.r+b.r, a.g+b.g, a.b+b.b, a.a+b.a};
+}
+
+RGBA& operator+=(RGBA &a, RGBA b) {
+    a.r += b.r;
+    a.g += b.g;
+    a.b += b.b;
+    a.a += b.a;
+    return a;
+}
+
+RGBA clamp01(RGBA a) {
+    RGBA b;
+    b.r = std::min(1.f, std::max(0.f, a.r));
+    b.g = std::min(1.f, std::max(0.f, a.g));
+    b.b = std::min(1.f, std::max(0.f, a.b));
+    b.a = std::min(1.f, std::max(0.f, a.a));
+    return b;
+}

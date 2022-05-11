@@ -21,9 +21,9 @@ struct Timer {
         auto now = std::chrono::high_resolution_clock::now();
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
         previous_timestamp = now;
-        if (ms > 0) {
-            std::cout << "fps: " << (1000.0/ms) << std::endl;
-        }
+        // if (ms > 0) {
+        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
+        // }
         return ms/1000.f;
     }
 
@@ -132,9 +132,26 @@ struct Buffer {
     unsigned char* data;
 };
 
+struct Image {
+    int w;
+    int h;
+    RGBA* data;
+
+    RGBA& at(int x, int y) {
+        return data[y * w + x];
+    }
+};
+
 struct Texture {
     GLuint id;
     Buffer buffer;
+    Image image;
+};
+
+struct StarField {
+    std::vector<Vec2> position;
+    std::vector<float> size;
+    std::vector<float> brightness;
 };
 
 struct GameState {
@@ -147,12 +164,46 @@ struct GameState {
     bool in_space;
     bool running;
     Texture tex;
+    StarField stars;
 };
 
 const int coord_width = 100;
 const int coord_height = 100;
 GameState state;
 
+
+StarField generate_star_field() {
+    StarField f;
+
+    f.position = {
+        Vec2{10, 10},
+        Vec2{20, 30},
+        Vec2{55, 23},
+    };
+
+    f.size = {
+        1, 3, 2,
+    };
+
+    f.brightness = {0.3, 0.7, 0.5};
+
+    return f;
+}
+
+
+void init_gradient(Image* buf) {
+    RGBA tl{1, 0, 0, 1};
+    RGBA tr{0, 1, 0, 1};
+    RGBA br{0, 0, 1, 1};
+    RGBA bl{1, 0, 1, 1};
+
+    for (int y = 0; y < buf->h; ++y)
+        for (int x = 0; x < buf->w; ++x) {
+            float fx = x/(float)buf->w;
+            float fy = y/(float)buf->h;
+            buf->at(x, y) = (1 - fx) * ((1-fy) * tl + fy * bl) + fx * ((1-fy) * tr + fy * br);
+        }
+}
 
 Texture make_texture() {
     Texture tex;
@@ -161,24 +212,22 @@ Texture make_texture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    int w = 128;
-    int h = 128;
+    int w = 256;
+    int h = 256;
     tex.buffer = {
         .w = w,
         .h = h,
         .data = (unsigned char*)malloc(w*h*3*sizeof(unsigned char)),
     };
 
+    tex.image = {
+        .w = w,
+        .h = h,
+        .data = (RGBA*)malloc(w*h*sizeof(RGBA)),
+    };
 
-    unsigned char* data = tex.buffer.data;
-    for (int i = 0; i < h*w*3; ++i) data[i] = 0;
 
-    // for (int y = 0; y < h; ++y)
-    //     for (int x = 0; x < w; ++x) {
-    //         data[y*w*3+x*3+0] = 255.f*x/w;
-    //         data[y*w*3+x*3+1] = 255.f*(h-y)/h;
-    //         data[y*w*3+x*3+2] = 255.f*(w-x)*y/(w*h);
-    //     }
+    // for (int i = 0; i < h*w; ++i) tex.image.data[i] = {};
 
     return tex;
 }
@@ -197,7 +246,11 @@ void update_texture(float dt) {
     //     }
 }
 
-void draw_line(Buffer* buf, Vec2 a, Vec2 b, Vec3 color, float thickness) {
+bool in_buffer(Image *buf, int x, int y) {
+    return x >= 0 and y >= 0 and x < buf->w and y < buf->h;
+}
+
+void draw_line(Image* buf, Vec2 a, Vec2 b, RGBA color, float thickness) {
     float t = thickness/2;
     int x0 = std::floor(std::min(a.x, b.x) - t + 0.5);
     int y0 = std::floor(std::min(a.y, b.y) - t + 0.5);
@@ -207,11 +260,13 @@ void draw_line(Buffer* buf, Vec2 a, Vec2 b, Vec3 color, float thickness) {
     Vec2 normal = Vec2{-ba.y, ba.x};
     for (int y = y0; y <= y1; ++y)
         for (int x = x0; x <= x1; ++x) {
+            if (!in_buffer(buf, x, y)) continue;
+
             const int ss = 4;
             const float factor = 1.f/(ss*ss);
             const float offset = 1.f/(ss*2);
             float value = 0;
-            Vec2 p{x - 0.5, y - 0.5};
+            Vec2 p{x - 0.5f, y - 0.5f};
             for (int yi = 0; yi < ss; ++yi) 
                 for (int xi = 0; xi < ss; ++xi) {
                     Vec2 xy = p + Vec2{offset + xi*2.f*offset, offset + yi*2.f*offset};
@@ -221,13 +276,50 @@ void draw_line(Buffer* buf, Vec2 a, Vec2 b, Vec3 color, float thickness) {
                     }
                 }
 
-            buf->data[y*buf->w*3 + x*3 + 0] = value * color.x * 255;
-            buf->data[y*buf->w*3 + x*3 + 1] = value * color.y * 255;
-            buf->data[y*buf->w*3 + x*3 + 2] = value * color.z * 255;
+            RGBA col = value * color;
+            buf->at(x, y) = clamp01(col + (1-col.a)*buf->at(x, y));
+        }
+}
+
+void draw_point(Image* buf, Vec2 pos, RGBA color, float radius) {
+    float t = radius/2;
+    int x0 = std::floor(pos.x - t + 0.5);
+    int y0 = std::floor(pos.y - t + 0.5);
+    int x1 = std::ceil(pos.x + t - 0.5);
+    int y1 = std::ceil(pos.y + t - 0.5);
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x) {
+            if (!in_buffer(buf, x, y)) continue;
+
+            const int ss = 4;
+            const float factor = 1.f/(ss*ss);
+            const float offset = 1.f/(ss*2);
+            float value = 0;
+            Vec2 p{x - 0.5f, y - 0.5f};
+            for (int yi = 0; yi < ss; ++yi) 
+                for (int xi = 0; xi < ss; ++xi) {
+                    Vec2 xy = p + Vec2{offset + xi*2.f*offset, offset + yi*2.f*offset};
+                    float distance = norm(xy - pos);
+                    if (distance < t) {
+                        value += factor;
+                    }
+                }
+
+            RGBA c = value * color;
+            printf("alpha: %f\n", c.a);
+            RGBA output = c + (1-c.a) * buf->at(x, y);
+            buf->at(x, y) = clamp01(output);
         }
 }
 
 void draw_texture(Texture tex) {
+    for (int y = 0; y < tex.buffer.h; ++y)
+        for (int x = 0; x < tex.buffer.w; ++x) {
+            tex.buffer.data[y*tex.buffer.w*3 + x*3 + 0] = tex.image.data[y*tex.image.w + x].r * 255;
+            tex.buffer.data[y*tex.buffer.w*3 + x*3 + 1] = tex.image.data[y*tex.image.w + x].g * 255;
+            tex.buffer.data[y*tex.buffer.w*3 + x*3 + 2] = tex.image.data[y*tex.image.w + x].b * 255;
+        }
+
     glBindTexture(GL_TEXTURE_2D, tex.id);
     glTexImage2D(
         GL_TEXTURE_2D,
@@ -252,32 +344,44 @@ void draw_texture(Texture tex) {
     glDisable(GL_TEXTURE_2D);
 }
 
+void init_solid(Image *im, RGBA c = {}) {
+    for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
+}
+
+void draw_starfield(Image *buf, StarField sf) {
+    for (size_t i = 0; i < sf.position.size(); ++i) {
+        float b = sf.brightness[i];
+        RGBA c = RGBA{b, b, b, b};
+        float size = 1 * sf.size[i];
+        draw_point(buf, sf.position[i], c, size);
+    }
+}
+
 void draw(GameState state) {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // glMatrixMode(GL_PROJECTION);
-    // glLoadIdentity();
-    // glOrtho(-1., 1., -1., 1., 1., 20.);
+    // init_solid(&state.tex.image, RGBA{1,0,0,1});
 
-    // glMatrixMode(GL_MODELVIEW);
-    // glLoadIdentity();
-    // gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
-
-    draw_line(&state.tex.buffer, Vec2{1,1}, Vec2{34, 34}, Vec3{1,1,1}, 1);
-    draw_texture(state.tex);
+    init_gradient(&state.tex.image);
 
     // for (Room room : state.rooms) {
     //     for (Wall w : room.walls) {
-    //         draw_wall(w);
+    //         draw_line(&state.tex.image, w.a, w.b, RGBA{1, 1, 1, 1}, 1);
     //     }
     // }
+
 
     // for (Door door : state.doors) {
     //     draw_door(door);
     // }
 
-    // draw_player_sprite(state.player);
+    // draw_point(&state.tex.image, state.player.pos, RGBA{0, 0, 1, 1}, state.player.size);
+
+    draw_line(&state.tex.image, Vec2{10, 10}, Vec2{30, 27}, RGBA{0.8, 0.0, 0.8, 0.8}, 2);
+    draw_starfield(&state.tex.image, state.stars);
+    
+    draw_texture(state.tex);
 }
 
 bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
@@ -356,23 +460,23 @@ void update(GameState *state, float dt) {
         }
     }
 
-    for (Door door : state->doors) {
+    // for (Door door : state->doors) {
 
-        if (crossed_line(state->player.pos, player.pos, door.hinge, door.end())) {
-            if (state->current_room == door.room0) {
-                state->current_room = door.room1;
-            } else {
-                state->current_room = door.room0;
-            }
-        }
-    }
+    //     if (crossed_line(state->player.pos, player.pos, door.hinge, door.end())) {
+    //         if (state->current_room == door.room0) {
+    //             state->current_room = door.room1;
+    //         } else {
+    //             state->current_room = door.room0;
+    //         }
+    //     }
+    // }
 
-    if (crossed_line(state->player.pos, player.pos, state->sas.a, state->sas.b)) {
-        state->in_space = !state->in_space;
-        if (!state->in_space) {
-            player.vel = Vec2{0, 0};
-        }
-    }
+    // if (crossed_line(state->player.pos, player.pos, state->sas.a, state->sas.b)) {
+    //     state->in_space = !state->in_space;
+    //     if (!state->in_space) {
+    //         player.vel = Vec2{0, 0};
+    //     }
+    // }
 
     // printf("current room: %d\n", state->current_room);
     // printf("in space: %d\n", state->in_space);
@@ -466,20 +570,16 @@ int main(int argc, char** argv) {
         .sas = Sas{Vec2{15, 10}, Vec2{20, 10}},
         .player = Player{
             .pos = Vec2{15, 15},
-            .size = 10,
+            .size = 3,
         },
     };
 
-    // ImageRead image = read_png("resources/sprites.png");
-    // if (!image.valid) {
-    //     fprintf(stderr, "Error reading image: %s\n", image.message.c_str());
-    //     return 1;
-    // }
-    // state.sprite= make_sprite(image);
     state.tex = make_texture();
+    state.stars = generate_star_field();
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
+    glEnable(GL_BLEND);  
 
     Timer timer_dt;
     timer_dt.start();
