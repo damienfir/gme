@@ -167,31 +167,34 @@ struct GameState {
     StarField stars;
 };
 
-const int coord_width = 100;
-const int coord_height = 100;
+const int width = 1024;
+const int height = 1024;
 GameState state;
 
 
-StarField generate_star_field() {
-    StarField f;
+float randf() {
+    return (float)rand() / RAND_MAX;
+}
 
-    f.position = {
-        Vec2{10, 10},
-        Vec2{20, 30},
-        Vec2{55, 23},
-    };
+void generate_star_field() {
+    StarField& f = state.stars;
 
-    f.size = {
-        1, 3, 2,
-    };
+    const int n_stars = 500;
 
-    f.brightness = {0.3, 0.7, 0.5};
+    f.position.resize(n_stars);
+    f.brightness.resize(n_stars);
+    f.size.resize(n_stars);
 
-    return f;
+    for (int i = 0; i < n_stars; ++i) {
+        f.position[i] = Vec2{randf()*width, randf()*height};
+        f.size[i] = randf()*10;
+        f.brightness[i] = randf();
+    }
 }
 
 
-void init_gradient(Image* buf) {
+void init_gradient() {
+    Image* buf = &state.tex.image;
     RGBA tl{1, 0, 0, 1};
     RGBA tr{0, 1, 0, 1};
     RGBA br{0, 0, 1, 1};
@@ -205,31 +208,25 @@ void init_gradient(Image* buf) {
         }
 }
 
-Texture make_texture() {
-    Texture tex;
-    glGenTextures(1, &tex.id);
-    glBindTexture(GL_TEXTURE_2D, tex.id);
+void init_texture() {
+    glGenTextures(1, &state.tex.id);
+    glBindTexture(GL_TEXTURE_2D, state.tex.id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    int w = 256;
-    int h = 256;
-    tex.buffer = {
+    int w = width;
+    int h = height;
+    state.tex.buffer = {
         .w = w,
         .h = h,
         .data = (unsigned char*)malloc(w*h*3*sizeof(unsigned char)),
     };
 
-    tex.image = {
+    state.tex.image = {
         .w = w,
         .h = h,
         .data = (RGBA*)malloc(w*h*sizeof(RGBA)),
     };
-
-
-    // for (int i = 0; i < h*w; ++i) tex.image.data[i] = {};
-
-    return tex;
 }
 
 void update_texture(float dt) {
@@ -246,11 +243,12 @@ void update_texture(float dt) {
     //     }
 }
 
-bool in_buffer(Image *buf, int x, int y) {
-    return x >= 0 and y >= 0 and x < buf->w and y < buf->h;
+bool in_buffer(int x, int y) {
+    return x >= 0 and y >= 0 and x < state.tex.image.w and y < state.tex.image.h;
 }
 
-void draw_line(Image* buf, Vec2 a, Vec2 b, RGBA color, float thickness) {
+void draw_line(Vec2 a, Vec2 b, RGBA color, float thickness) {
+    Image* buf = &state.tex.image;
     float t = thickness/2;
     int x0 = std::floor(std::min(a.x, b.x) - t + 0.5);
     int y0 = std::floor(std::min(a.y, b.y) - t + 0.5);
@@ -260,7 +258,7 @@ void draw_line(Image* buf, Vec2 a, Vec2 b, RGBA color, float thickness) {
     Vec2 normal = Vec2{-ba.y, ba.x};
     for (int y = y0; y <= y1; ++y)
         for (int x = x0; x <= x1; ++x) {
-            if (!in_buffer(buf, x, y)) continue;
+            if (!in_buffer(x, y)) continue;
 
             const int ss = 4;
             const float factor = 1.f/(ss*ss);
@@ -281,7 +279,8 @@ void draw_line(Image* buf, Vec2 a, Vec2 b, RGBA color, float thickness) {
         }
 }
 
-void draw_point(Image* buf, Vec2 pos, RGBA color, float radius) {
+void draw_point(Vec2 pos, RGBA color, float radius) {
+    Image* buf = &state.tex.image;
     float t = radius/2;
     int x0 = std::floor(pos.x - t + 0.5);
     int y0 = std::floor(pos.y - t + 0.5);
@@ -289,7 +288,7 @@ void draw_point(Image* buf, Vec2 pos, RGBA color, float radius) {
     int y1 = std::ceil(pos.y + t - 0.5);
     for (int y = y0; y <= y1; ++y)
         for (int x = x0; x <= x1; ++x) {
-            if (!in_buffer(buf, x, y)) continue;
+            if (!in_buffer(x, y)) continue;
 
             const int ss = 4;
             const float factor = 1.f/(ss*ss);
@@ -306,13 +305,13 @@ void draw_point(Image* buf, Vec2 pos, RGBA color, float radius) {
                 }
 
             RGBA c = value * color;
-            printf("alpha: %f\n", c.a);
             RGBA output = c + (1-c.a) * buf->at(x, y);
             buf->at(x, y) = clamp01(output);
         }
 }
 
-void draw_texture(Texture tex) {
+void draw_texture() {
+    auto& tex = state.tex;
     for (int y = 0; y < tex.buffer.h; ++y)
         for (int x = 0; x < tex.buffer.w; ++x) {
             tex.buffer.data[y*tex.buffer.w*3 + x*3 + 0] = tex.image.data[y*tex.image.w + x].r * 255;
@@ -344,26 +343,28 @@ void draw_texture(Texture tex) {
     glDisable(GL_TEXTURE_2D);
 }
 
-void init_solid(Image *im, RGBA c = {}) {
+void init_solid(RGBA c = {}) {
+    Image* im = &state.tex.image;
     for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
 }
 
-void draw_starfield(Image *buf, StarField sf) {
+void draw_starfield() {
+    auto sf = state.stars;
     for (size_t i = 0; i < sf.position.size(); ++i) {
         float b = sf.brightness[i];
         RGBA c = RGBA{b, b, b, b};
         float size = 1 * sf.size[i];
-        draw_point(buf, sf.position[i], c, size);
+        draw_point(sf.position[i], c, size);
     }
 }
 
-void draw(GameState state) {
+void draw() {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // init_solid(&state.tex.image, RGBA{1,0,0,1});
 
-    init_gradient(&state.tex.image);
+    init_gradient();
 
     // for (Room room : state.rooms) {
     //     for (Wall w : room.walls) {
@@ -378,10 +379,9 @@ void draw(GameState state) {
 
     // draw_point(&state.tex.image, state.player.pos, RGBA{0, 0, 1, 1}, state.player.size);
 
-    draw_line(&state.tex.image, Vec2{10, 10}, Vec2{30, 27}, RGBA{0.8, 0.0, 0.8, 0.8}, 2);
-    draw_starfield(&state.tex.image, state.stars);
+    draw_starfield();
     
-    draw_texture(state.tex);
+    draw_texture();
 }
 
 bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
@@ -404,45 +404,45 @@ bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
     return false;
 }
 
-void update(GameState *state, float dt) {
-    Player player = state->player;
+void update(float dt) {
+    Player player = state.player;
 
-    if (!state->in_space) {
-        if (state->controls.use_js) {
-            player.vel.x = state->controls.js.x;
-            player.vel.y = state->controls.js.y;
+    if (!state.in_space) {
+        if (state.controls.use_js) {
+            player.vel.x = state.controls.js.x;
+            player.vel.y = state.controls.js.y;
         } else {
             float player_speed = 30;
-            if (state->controls.left) {
+            if (state.controls.left) {
                 player.pos.x -= player_speed * dt;
             }
-            if (state->controls.right) {
+            if (state.controls.right) {
                 player.pos.x += player_speed * dt;
             }
-            if (state->controls.up) {
+            if (state.controls.up) {
                 player.pos.y -= player_speed * dt;
             }
-            if (state->controls.down) {
+            if (state.controls.down) {
                 player.pos.y += player_speed * dt;
             }
         }
 
     } else {
-        if (state->controls.use_js) {
-            player.vel.x += state->controls.js.x * 0.03;
-            player.vel.y += state->controls.js.y * 0.03;
+        if (state.controls.use_js) {
+            player.vel.x += state.controls.js.x * 0.03;
+            player.vel.y += state.controls.js.y * 0.03;
         } else {
             float player_acc = 20;
-            if (state->controls.left) {
+            if (state.controls.left) {
                 player.vel.x -= player_acc * dt;
             }
-            if (state->controls.right) {
+            if (state.controls.right) {
                 player.vel.x += player_acc * dt;
             }
-            if (state->controls.up) {
+            if (state.controls.up) {
                 player.vel.y -= player_acc * dt;
             }
-            if (state->controls.down) {
+            if (state.controls.down) {
                 player.vel.y += player_acc * dt;
             }
         }
@@ -450,38 +450,38 @@ void update(GameState *state, float dt) {
     player.pos = player.pos + player.vel * dt;
 
 
-    for (auto & room : state->rooms) {
+    for (auto & room : state.rooms) {
         for (int i = 0; i < (int)room.walls.size(); ++i) {
             Wall w = room.walls[i];
-            if (crossed_line(state->player.pos, player.pos, w.a, w.b)) {
-                player.pos = state->player.pos;
+            if (crossed_line(state.player.pos, player.pos, w.a, w.b)) {
+                player.pos = state.player.pos;
                 break;
             }
         }
     }
 
-    // for (Door door : state->doors) {
+    // for (Door door : state.doors) {
 
-    //     if (crossed_line(state->player.pos, player.pos, door.hinge, door.end())) {
-    //         if (state->current_room == door.room0) {
-    //             state->current_room = door.room1;
+    //     if (crossed_line(state.player.pos, player.pos, door.hinge, door.end())) {
+    //         if (state.current_room == door.room0) {
+    //             state.current_room = door.room1;
     //         } else {
-    //             state->current_room = door.room0;
+    //             state.current_room = door.room0;
     //         }
     //     }
     // }
 
-    // if (crossed_line(state->player.pos, player.pos, state->sas.a, state->sas.b)) {
-    //     state->in_space = !state->in_space;
-    //     if (!state->in_space) {
+    // if (crossed_line(state.player.pos, player.pos, state.sas.a, state.sas.b)) {
+    //     state.in_space = !state.in_space;
+    //     if (!state.in_space) {
     //         player.vel = Vec2{0, 0};
     //     }
     // }
 
-    // printf("current room: %d\n", state->current_room);
-    // printf("in space: %d\n", state->in_space);
+    // printf("current room: %d\n", state.current_room);
+    // printf("in space: %d\n", state.in_space);
 
-    state->player = player;
+    state.player = player;
 
     update_texture(dt);
 }
@@ -524,6 +524,7 @@ void joystick_control(int jid) {
 }
 
 int main(int argc, char** argv) {
+    std::srand(std::time(0));
 
     if (!glfwInit()) {
         std::cerr << "Cannot initialize GLFW\n";
@@ -574,8 +575,8 @@ int main(int argc, char** argv) {
         },
     };
 
-    state.tex = make_texture();
-    state.stars = generate_star_field();
+    init_texture();
+    generate_star_field();
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
@@ -596,9 +597,9 @@ int main(int argc, char** argv) {
         }
 
         float dt = timer_dt.tick();
-        update(&state, dt);
+        update(dt);
 
-        draw(state);
+        draw();
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
