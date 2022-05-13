@@ -189,8 +189,8 @@ struct GameState {
     Water water;
 };
 
-const int width = 128;
-const int height = 128;
+const int width = 1024;
+const int height = 1024;
 GameState state;
 
 
@@ -401,15 +401,27 @@ void draw_texture() {
     glDisable(GL_TEXTURE_2D);
 }
 
-void init_solid(RGBA c = {}) {
-    Image* im = &state.tex.image;
-    for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
+void draw_starfield() {
+    auto sf = state.stars;
+    for (int i = 0; i < sf.n_stars; ++i) {
+        float b = sf.brightness[i];
+        RGBA c = RGBA{b, b, b, b};
+        float size = 1 * sf.size[i];
+        draw_point(sf.position[i], c, size);
+    }
 }
 
-void draw() {
-    glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+void draw_water() {
+    Image* im = &state.tex.image;
+    Water* w = &state.water;
+    for (int y = 0; y < im->h; ++y)
+        for (int x = 0; x < im->w; ++x) {
+            // printf("water %d, %d: %f\n", x, y, w->at(x, y));
+            im->at(x, y) = clamp01(0.5 * w->at(x, y) * RGBA{0, 0, 1, 1});
+        }
+}
 
+void draw_gradient() {
     Image* im = &state.tex.image;
     RGBA tl{1, 0, 0, 1};
     RGBA tr{0, 1, 0, 1};
@@ -422,26 +434,20 @@ void draw() {
             float fy = y/(float)im->h;
             im->at(x, y) = (1 - fx) * ((1-fy) * tl + fy * bl) + fx * ((1-fy) * tr + fy * br);
         }
+}
 
+void init_solid(RGBA c = {}) {
+    Image* im = &state.tex.image;
+    for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
+}
 
-    // Draw water on gradient
-    Water* w = &state.water;
-    for (int y = 0; y < im->h; ++y)
-        for (int x = 0; x < im->w; ++x) {
-            // printf("water %d, %d: %f\n", x, y, w->at(x, y));
-            im->at(x, y) = clamp01(0.5 * w->at(x, y) * RGBA{0, 0, 1, 1});
-        }
+void draw() {
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-    // Draw starfield
-    // auto sf = state.stars;
-    // for (int i = 0; i < sf.n_stars; ++i) {
-    //     float b = sf.brightness[i];
-    //     RGBA c = RGBA{b, b, b, b};
-    //     float size = 1 * sf.size[i];
-    //     draw_point(sf.position[i], c, size);
-    // }
-
+    draw_gradient();
+    draw_starfield();
+    // draw_water();
     draw_texture();
 }
 
