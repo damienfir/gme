@@ -18,20 +18,35 @@ fn vec2(a: f32, b: f32) Vec {
     return zm.f32x4(a, b, 0, 0);
 }
 
-const Wall = struct {
+const Line = struct {
     a: Vec,
     b: Vec,
+    va: sf.VertexArray,
+
+    pub fn init(x0: f32, y0: f32, x1: f32, y1: f32) !Line {
+        const line = [_]sf.Vertex{
+            sf.Vertex{ .position = sf.Vector2f.new(x0, y0) },
+            sf.Vertex{ .position = sf.Vector2f.new(x1, y1) },
+        };
+        return Line{
+            .a = vec2(x0, y0),
+            .b = vec2(x1, y1),
+            .va = try sf.VertexArray.createFromSlice(&line, .Lines),
+        };
+    }
+
+    pub fn normal() Vec {}
 };
 
 const Room = struct {
-    walls: []Wall,
+    walls: []Line,
 };
 
 const Player = struct {
     pos: Vec,
     sprite: sf.CircleShape,
     speed: f32,
-    size: f32,
+    radius: f32,
 };
 
 const Controls = struct {
@@ -53,6 +68,8 @@ const GameState = struct {
 var game: GameState = undefined;
 
 fn update(dt: f32) void {
+    var player = game.player;
+
     if (game.controls.left) {
         game.player.pos[0] -= game.player.speed * dt;
     }
@@ -77,11 +94,7 @@ fn draw(window: *sf.RenderWindow) !void {
 
     for (game.rooms) |room| {
         for (room.walls) |wall| {
-            const line = [_]sf.Vertex{
-                sf.Vertex{ .position = sf.Vector2f.new(wall.a[0], wall.a[1]) },
-                sf.Vertex{ .position = sf.Vector2f.new(wall.b[0], wall.b[1]) },
-            };
-            window.draw(try sf.VertexArray.createFromSlice(&line, .Lines), null);
+            window.draw(wall.va, null);
         }
     }
 
@@ -97,15 +110,18 @@ pub fn main() anyerror!void {
     var window = try sf.RenderWindow.createDefault(.{ .x = game.width, .y = game.height }, "Gme");
 
     game.player.pos = vec2(100, 100);
-    game.player.size = 10;
-    game.player.sprite = try sf.CircleShape.create(game.player.size);
+    game.player.radius = 10;
+    game.player.sprite = try sf.CircleShape.create(game.player.radius);
     game.player.sprite.setFillColor(sf.Color.Green);
     game.player.speed = 100;
 
     game.rooms = &[_]Room{
         .{
-            .walls = &[_]Wall{
-                .{ .a = vec2(10, 10), .b = vec2(200, 10) },
+            .walls = &[_]Line{
+                try Line.init(10, 10, 200, 10),
+                try Line.init(200, 10, 200, 200),
+                try Line.init(200, 200, 10, 200),
+                try Line.init(10, 200, 10, 10),
             },
         },
     };

@@ -189,8 +189,13 @@ struct GameState {
     Water water;
 };
 
-const int width = 1024;
-const int height = 1024;
+
+const int window_width = 1024;
+const int window_height = 1024;
+const int resolution_width = 1024;
+const int resolution_height = 1024;
+const int game_width = 100;
+const int game_height = 100;
 GameState state;
 
 
@@ -198,7 +203,7 @@ float randf() {
     return (float)rand() / RAND_MAX;
 }
 
-void generate_star_field() {
+void generate_star_field(int width, int height) {
     StarField& f = state.stars;
 
     f.n_stars = 500;
@@ -215,17 +220,14 @@ void generate_star_field() {
 }
 
 
-void init_gradient() {
-}
-
 void init_texture() {
     glGenTextures(1, &state.tex.id);
     glBindTexture(GL_TEXTURE_2D, state.tex.id);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    int w = width;
-    int h = height;
+    int w = resolution_width;
+    int h = resolution_height;
     state.tex.buffer = {
         .w = w,
         .h = h,
@@ -239,8 +241,13 @@ void init_texture() {
     };
 }
 
+void init_solid(RGBA c = {}) {
+    Image* im = &state.tex.image;
+    for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
+}
 
-void init_water() {
+
+void init_water(int width, int height) {
     state.water.h = height;
     state.water.w = width;
     state.water.heightmap = (float*)malloc(height*width*sizeof(float));
@@ -436,17 +443,34 @@ void draw_gradient() {
         }
 }
 
-void init_solid(RGBA c = {}) {
-    Image* im = &state.tex.image;
-    for (int i = 0; i < im->w * im->h; ++i) im->data[i] = c;
+float to_viewport(float x) {
+    return resolution_width * x / game_width;
+}
+
+Vec2 to_viewport(Vec2 v) {
+    float x = resolution_width * v.x / game_width;
+    float y = resolution_height * v.y / game_height;
+    // float x = 2 * v.x / (float)coord_width - 1;
+    // float y = - (2 * v.y / (float)coord_height - 1);
+    return  Vec2{x,y};
 }
 
 void draw() {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    draw_gradient();
-    draw_starfield();
+    init_solid();
+
+    draw_point(to_viewport(state.player.pos), {0, 0, 1, 1}, to_viewport(state.player.size));
+
+    for (const Room& room: state.rooms) {
+        for (const Wall& wall : room.walls) {
+            draw_line(to_viewport(wall.a), to_viewport(wall.b), {1,1,1,1}, 3);
+        }
+    }
+
+    // draw_gradient();
+    // draw_starfield();
     // draw_water();
     draw_texture();
 }
@@ -527,31 +551,31 @@ void update(float dt) {
         }
     }
 
-    // for (Door door : state.doors) {
+    for (Door door : state.doors) {
 
-    //     if (crossed_line(state.player.pos, player.pos, door.hinge, door.end())) {
-    //         if (state.current_room == door.room0) {
-    //             state.current_room = door.room1;
-    //         } else {
-    //             state.current_room = door.room0;
-    //         }
-    //     }
-    // }
+        if (crossed_line(state.player.pos, player.pos, door.hinge, door.end())) {
+            if (state.current_room == door.room0) {
+                state.current_room = door.room1;
+            } else {
+                state.current_room = door.room0;
+            }
+        }
+    }
 
-    // if (crossed_line(state.player.pos, player.pos, state.sas.a, state.sas.b)) {
-    //     state.in_space = !state.in_space;
-    //     if (!state.in_space) {
-    //         player.vel = Vec2{0, 0};
-    //     }
-    // }
+    if (crossed_line(state.player.pos, player.pos, state.sas.a, state.sas.b)) {
+        state.in_space = !state.in_space;
+        if (!state.in_space) {
+            player.vel = Vec2{0, 0};
+        }
+    }
 
     // printf("current room: %d\n", state.current_room);
     // printf("in space: %d\n", state.in_space);
 
     state.player = player;
 
-    update_texture(dt);
-    update_water(dt);
+    // update_texture(dt);
+    // update_water(dt);
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -599,10 +623,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const int width = 1024;
-    const int height = 1024;
-
-    GLFWwindow * window = glfwCreateWindow(width, height, "Awesome game", NULL, NULL);
+    GLFWwindow * window = glfwCreateWindow(window_width, window_height, "Awesome game", NULL, NULL);
     if (!window) {
         std::cerr << "Cannot open window\n";
         return 1;
@@ -639,13 +660,13 @@ int main(int argc, char** argv) {
         .sas = Sas{Vec2{15, 10}, Vec2{20, 10}},
         .player = Player{
             .pos = Vec2{15, 15},
-            .size = 3,
+            .size = 1,
         },
     };
 
     init_texture();
-    init_water();
-    generate_star_field();
+    // init_water();
+    generate_star_field(resolution_width, resolution_height);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
