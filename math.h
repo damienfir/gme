@@ -95,3 +95,7 @@ int modulo_positive(int x, int m) {
 int clamp(int x, int mi, int ma) {
     return std::min(ma, std::max(mi, x));
 }
+
+float clamp(float x, float mi, float ma) {
+    return std::min(ma, std::max(mi, x));
+}

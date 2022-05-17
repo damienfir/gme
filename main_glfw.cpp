@@ -37,26 +37,6 @@ struct Timer {
     }
 };
 
-
-struct Camera {
-    Vec2 position;  // offset from game grid top-left (0,0)
-    float size_x;  // size on game grid
-    float size_y;
-    int res_x;  // texture resolution
-    int res_y;
-
-    Vec2 to_viewport(Vec2 v) {
-        return Vec2{
-            .x = (v.x - position.x) * res_x / size_x,
-            .y = (v.y - position.y) * res_y / size_y
-        };
-    }
-
-    float to_viewport(float a) {
-        return a * res_x / size_x;
-    }
-};
-
 struct Rect {
     float x;
     float y;
@@ -77,18 +57,23 @@ struct Animation {
     float animation_time;
     float animation_duration;
 
-    void start(float begin, float end) {
+
+    float smootherstep(float x) {
+        return x * x * x * (x * (x * 6 - 15) + 10);
+    }
+
+    void start(float begin, float end, float duration) {
         value_start = begin;
         value_end = end;
         animation_time = 0;
-        animation_duration = 1;
+        animation_duration = duration;
         animating = true;
     }
 
     void update(float dt) {
         if (animating) {
             animation_time += dt;
-            float x = animation_time / animation_duration;
+            float x = smootherstep(animation_time / animation_duration);
             value = value_start * (1-x) + value_end * x;
 
             if (x >= 1) {
@@ -96,6 +81,49 @@ struct Animation {
                 animating = false;
             }
         }
+    }
+};
+
+
+struct Camera {
+    Vec2 position;  // offset from game grid top-left (0,0)
+    float size_x;  // size on game grid
+    float size_y;
+    int res_x;  // texture resolution
+    int res_y;
+
+    Animation pos_animation_x;
+    Animation pos_animation_y;
+    Animation size_animation_x;
+    Animation size_animation_y;
+
+    Vec2 to_viewport(Vec2 v) {
+        return Vec2{
+            .x = (v.x - position.x) * res_x / size_x,
+            .y = (v.y - position.y) * res_y / size_y
+        };
+    }
+
+    float to_viewport(float a) {
+        return a * res_x / size_x;
+    }
+
+    void set_target_view(Vec2 new_position, float new_size_x, float new_size_y) {
+        pos_animation_x.start(position.x, new_position.x, 0.5);
+        pos_animation_y.start(position.y, new_position.y, 0.5);
+        size_animation_x.start(size_x, new_size_x, 0.5);
+        size_animation_y.start(size_y, new_size_y, 0.5);
+    }
+    
+    void update(float dt) {
+        pos_animation_x.update(dt);
+        pos_animation_y.update(dt);
+        size_animation_x.update(dt);
+        size_animation_y.update(dt);
+        position.x = pos_animation_x.value;
+        position.y = pos_animation_y.value;
+        size_x = size_animation_x.value;
+        size_y = size_animation_y.value;
     }
 };
 
@@ -466,8 +494,7 @@ void draw() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     init_solid();
-
-    printf("player: %f %f\n", state.player.pos.x, state.player.pos.y);
+    
     draw_point(state.camera.to_viewport(state.player.pos), {0, 0, 1, 1}, state.camera.to_viewport(state.player.size));
 
     for (const Wall& wall : state.walls) {
@@ -475,7 +502,6 @@ void draw() {
     }
 
     // draw_gradient();
-    // draw_starfield();
     // draw_water();
     draw_texture();
 }
@@ -533,9 +559,9 @@ void update_camera_position(Player player) {
     for (Room room : state.rooms) {
         if (player_in_room(player, room)) {
             float margin = 3;
-            state.camera.position = room.bbox[0] - margin;
-            state.camera.size_x = room.bbox[1].x - room.bbox[0].x + 2*margin;
-            state.camera.size_y = room.bbox[1].y - room.bbox[0].y + 2*margin;
+            float target_size_x = room.bbox[1].x - room.bbox[0].x + 2*margin;
+            float target_size_y = room.bbox[1].y - room.bbox[0].y + 2*margin;
+            state.camera.set_target_view(room.bbox[0] - margin, target_size_x, target_size_y);
             return;
         }
     }
@@ -629,6 +655,7 @@ void update(float dt) {
     // update_texture(dt);
     // update_water(dt);
 
+    state.camera.update(dt);
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -696,15 +723,15 @@ int main(int argc, char** argv) {
             Wall{Vec2{30, 30}, Vec2{10, 30}},
 
             Wall{Vec2{10, 30}, Vec2{10, 10}},
-            Wall{Vec2{30, 10}, Vec2{60, 10}},
-            Wall{Vec2{60, 10}, Vec2{60, 30}},
-            Wall{Vec2{60, 30}, Vec2{30, 30}},
+            Wall{Vec2{30, 10}, Vec2{90, 10}},
+            Wall{Vec2{90, 10}, Vec2{90, 30}},
+            Wall{Vec2{90, 30}, Vec2{30, 30}},
             Wall{Vec2{30, 30}, Vec2{30, 20}},
             Wall{Vec2{30, 15}, Vec2{30, 10}},
         },
         .rooms = {
             Room{.bbox = {Vec2{10, 10}, Vec2{30, 30}}},
-            Room{.bbox = {Vec2{30, 10}, Vec2{60, 30}}},
+            Room{.bbox = {Vec2{30, 10}, Vec2{90, 30}}},
         },
         .doors = {
             Door{.hinge = Vec2{30,20}, .length = 5, .angle = M_PI_2, .room0 = 0, .room1 = 1}
