@@ -38,6 +38,25 @@ struct Timer {
 };
 
 
+struct Camera {
+    Vec2 position;  // offset from game grid top-left (0,0)
+    float size_x;  // size on game grid
+    float size_y;
+    int res_x;  // texture resolution
+    int res_y;
+
+    Vec2 to_viewport(Vec2 v) {
+        return Vec2{
+            .x = (v.x - position.x) * res_x / size_x,
+            .y = (v.y - position.y) * res_y / size_y
+        };
+    }
+
+    float to_viewport(float a) {
+        return a * res_x / size_x;
+    }
+};
+
 struct Rect {
     float x;
     float y;
@@ -94,13 +113,17 @@ struct Door {
     }
 };
 
+struct Room {
+    Vec2 bbox[2];
+
+    Vec2 center() {
+        return (bbox[1] - bbox[0]) / 2.f;
+    }
+};
+
 struct Sas {
     Vec2 a;
     Vec2 b;
-};
-
-struct Room {
-    std::vector<Wall> walls;
 };
 
 struct Controls {
@@ -176,8 +199,8 @@ struct Water {
 };
 
 struct GameState {
+    std::vector<Wall> walls;
     std::vector<Room> rooms;
-    int current_room;
     std::vector<Door> doors;
     Sas sas;
     Player player;
@@ -187,15 +210,10 @@ struct GameState {
     Texture tex;
     StarField stars;
     Water water;
+    Camera camera;
 };
 
 
-const int window_width = 1024;
-const int window_height = 1024;
-const int resolution_width = 1024;
-const int resolution_height = 1024;
-const int game_width = 100;
-const int game_height = 100;
 GameState state;
 
 
@@ -226,8 +244,8 @@ void init_texture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    int w = resolution_width;
-    int h = resolution_height;
+    int w = state.camera.res_x;
+    int h = state.camera.res_y;
     state.tex.buffer = {
         .w = w,
         .h = h,
@@ -443,30 +461,17 @@ void draw_gradient() {
         }
 }
 
-float to_viewport(float x) {
-    return resolution_width * x / game_width;
-}
-
-Vec2 to_viewport(Vec2 v) {
-    float x = resolution_width * v.x / game_width;
-    float y = resolution_height * v.y / game_height;
-    // float x = 2 * v.x / (float)coord_width - 1;
-    // float y = - (2 * v.y / (float)coord_height - 1);
-    return  Vec2{x,y};
-}
-
 void draw() {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     init_solid();
 
-    draw_point(to_viewport(state.player.pos), {0, 0, 1, 1}, to_viewport(state.player.size));
+    printf("player: %f %f\n", state.player.pos.x, state.player.pos.y);
+    draw_point(state.camera.to_viewport(state.player.pos), {0, 0, 1, 1}, state.camera.to_viewport(state.player.size));
 
-    for (const Room& room: state.rooms) {
-        for (const Wall& wall : room.walls) {
-            draw_line(to_viewport(wall.a), to_viewport(wall.b), {1,1,1,1}, 3);
-        }
+    for (const Wall& wall : state.walls) {
+        draw_line(state.camera.to_viewport(wall.a), state.camera.to_viewport(wall.b), {1,1,1,1}, state.camera.to_viewport(1));
     }
 
     // draw_gradient();
@@ -495,87 +500,135 @@ bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
     return false;
 }
 
+void update_player_with_gravity(float dt) {
+    Player player = state.player;
+    if (state.controls.use_js) {
+        player.vel.x = state.controls.js.x;
+        player.vel.y = state.controls.js.y;
+    } else {
+        float player_speed = 30;
+        if (state.controls.left) {
+            player.pos.x -= player_speed * dt;
+        }
+        if (state.controls.right) {
+            player.pos.x += player_speed * dt;
+        }
+        if (state.controls.up) {
+            player.pos.y -= player_speed * dt;
+        }
+        if (state.controls.down) {
+            player.pos.y += player_speed * dt;
+        }
+    }
+}
+
+bool player_in_room(Player p, Room r) {
+    return p.pos.x >= r.bbox[0].x
+        and p.pos.y >= r.bbox[0].y
+        and p.pos.x <= r.bbox[1].x
+        and p.pos.y <= r.bbox[1].y;
+}
+
+void update_camera_position(Player player) {
+    for (Room room : state.rooms) {
+        if (player_in_room(player, room)) {
+            float margin = 3;
+            state.camera.position = room.bbox[0] - margin;
+            state.camera.size_x = room.bbox[1].x - room.bbox[0].x + 2*margin;
+            state.camera.size_y = room.bbox[1].y - room.bbox[0].y + 2*margin;
+            return;
+        }
+    }
+}
+
 void update(float dt) {
     Player player = state.player;
 
-    if (!state.in_space) {
-        if (state.controls.use_js) {
-            player.vel.x = state.controls.js.x;
-            player.vel.y = state.controls.js.y;
-        } else {
-            float player_speed = 30;
-            if (state.controls.left) {
-                player.pos.x -= player_speed * dt;
-            }
-            if (state.controls.right) {
-                player.pos.x += player_speed * dt;
-            }
-            if (state.controls.up) {
-                player.pos.y -= player_speed * dt;
-            }
-            if (state.controls.down) {
-                player.pos.y += player_speed * dt;
-            }
+    if (state.controls.use_js) {
+        player.vel.x += state.controls.js.x * 0.03;
+        player.vel.y += state.controls.js.y * 0.03;
+    } else {
+        // float player_acc = 20;
+        // if (state.controls.left) {
+        //     player.vel.x -= player_acc * dt;
+        // }
+        // if (state.controls.right) {
+        //     player.vel.x += player_acc * dt;
+        // }
+        // if (state.controls.up) {
+        //     player.vel.y -= player_acc * dt;
+        // }
+        // if (state.controls.down) {
+        //     player.vel.y += player_acc * dt;
+        // }
+
+        Vec2 push;
+        if (state.controls.left) {
+            push = {-1, 0};
+            state.controls.left = false;
+        } else if (state.controls.right) {
+            push = {1, 0};
+            state.controls.right = false;
+        } else if (state.controls.up) {
+            push = {0, -1};
+            state.controls.up = false;
+        } else if (state.controls.down) {
+            push = {0, 1};
+            state.controls.down = false;
         }
 
-    } else {
-        if (state.controls.use_js) {
-            player.vel.x += state.controls.js.x * 0.03;
-            player.vel.y += state.controls.js.y * 0.03;
-        } else {
-            float player_acc = 20;
-            if (state.controls.left) {
-                player.vel.x -= player_acc * dt;
+        if (push.x != 0 or push.y != 0) {
+            Vec2 pos_after_push = player.pos + push;
+            bool pushed = false;
+            for (int i = 0; i < (int)state.walls.size(); ++i) {
+                Wall w = state.walls[i];
+                if (crossed_line(state.player.pos, pos_after_push, w.a, w.b)) {
+                    pushed = true;
+                    break;
+                }
             }
-            if (state.controls.right) {
-                player.vel.x += player_acc * dt;
-            }
-            if (state.controls.up) {
-                player.vel.y -= player_acc * dt;
-            }
-            if (state.controls.down) {
-                player.vel.y += player_acc * dt;
+
+            if (pushed) {
+                player.vel = -push * 10;
             }
         }
     }
     player.pos = player.pos + player.vel * dt;
 
-
-    for (auto & room : state.rooms) {
-        for (int i = 0; i < (int)room.walls.size(); ++i) {
-            Wall w = room.walls[i];
-            if (crossed_line(state.player.pos, player.pos, w.a, w.b)) {
-                player.pos = state.player.pos;
-                break;
-            }
+    for (int i = 0; i < (int)state.walls.size(); ++i) {
+        Wall w = state.walls[i];
+        if (crossed_line(state.player.pos, player.pos, w.a, w.b)) {
+            player.pos = state.player.pos;
+            player.vel = {0, 0};
+            break;
         }
     }
 
     for (Door door : state.doors) {
-
         if (crossed_line(state.player.pos, player.pos, door.hinge, door.end())) {
-            if (state.current_room == door.room0) {
-                state.current_room = door.room1;
-            } else {
-                state.current_room = door.room0;
-            }
+            // if (state.current_room == door.room0) {
+            //     state.current_room = door.room1;
+            // } else {
+            //     state.current_room = door.room0;
+            // }
+
+            printf("Changed room\n");
+            update_camera_position(player);
         }
     }
 
-    if (crossed_line(state.player.pos, player.pos, state.sas.a, state.sas.b)) {
-        state.in_space = !state.in_space;
-        if (!state.in_space) {
-            player.vel = Vec2{0, 0};
-        }
-    }
-
-    // printf("current room: %d\n", state.current_room);
-    // printf("in space: %d\n", state.in_space);
+    // if (crossed_line(state.player.pos, player.pos, state.sas.a, state.sas.b)) {
+    //     state.in_space = !state.in_space;
+    //     if (!state.in_space) {
+    //         player.vel = Vec2{0, 0};
+    //     }
+    // }
 
     state.player = player;
 
     // update_texture(dt);
     // update_water(dt);
+
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -615,6 +668,7 @@ void joystick_control(int jid) {
     }
 }
 
+
 int main(int argc, char** argv) {
     std::srand(std::time(0));
 
@@ -623,6 +677,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const int window_width = 1024;
+    const int window_height = 1024;
     GLFWwindow * window = glfwCreateWindow(window_width, window_height, "Awesome game", NULL, NULL);
     if (!window) {
         std::cerr << "Cannot open window\n";
@@ -632,41 +688,46 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
 
     state = {
-        .rooms = {
-            Room{
-                .walls = {
-                    Wall{Vec2{10, 10}, Vec2{15, 10}},
-                    Wall{Vec2{20, 10}, Vec2{30, 10}},
-                    Wall{Vec2{30, 10}, Vec2{30, 15}},
-                    Wall{Vec2{30, 20}, Vec2{30, 30}},
-                    Wall{Vec2{30, 30}, Vec2{10, 30}},
-                    Wall{Vec2{10, 30}, Vec2{10, 10}},
-                }
-            },
-            Room{
-                .walls = {
-                    Wall{Vec2{30, 10}, Vec2{60, 10}},
-                    Wall{Vec2{60, 10}, Vec2{60, 30}},
-                    Wall{Vec2{60, 30}, Vec2{30, 30}},
-                    Wall{Vec2{30, 30}, Vec2{30, 20}},
-                    Wall{Vec2{30, 15}, Vec2{30, 10}},
-                }
-            },
+        .walls = {
+            Wall{Vec2{10, 10}, Vec2{15, 10}},
+            Wall{Vec2{20, 10}, Vec2{30, 10}},
+            Wall{Vec2{30, 10}, Vec2{30, 15}},
+            Wall{Vec2{30, 20}, Vec2{30, 30}},
+            Wall{Vec2{30, 30}, Vec2{10, 30}},
+
+            Wall{Vec2{10, 30}, Vec2{10, 10}},
+            Wall{Vec2{30, 10}, Vec2{60, 10}},
+            Wall{Vec2{60, 10}, Vec2{60, 30}},
+            Wall{Vec2{60, 30}, Vec2{30, 30}},
+            Wall{Vec2{30, 30}, Vec2{30, 20}},
+            Wall{Vec2{30, 15}, Vec2{30, 10}},
         },
-        .current_room = 0,
+        .rooms = {
+            Room{.bbox = {Vec2{10, 10}, Vec2{30, 30}}},
+            Room{.bbox = {Vec2{30, 10}, Vec2{60, 30}}},
+        },
         .doors = {
             Door{.hinge = Vec2{30,20}, .length = 5, .angle = M_PI_2, .room0 = 0, .room1 = 1}
         },
         .sas = Sas{Vec2{15, 10}, Vec2{20, 10}},
         .player = Player{
-            .pos = Vec2{15, 15},
-            .size = 1,
+            .pos = Vec2{15, 18},
+            .vel = Vec2{-10, 0},
+            .size = 1
         },
+        .camera = {
+            .position = Vec2{0, 0},
+            .size_x = 30,
+            .size_y = 30,
+            .res_x = 1024,
+            .res_y = 1024
+        }
     };
 
     init_texture();
     // init_water();
-    generate_star_field(resolution_width, resolution_height);
+    generate_star_field(1024, 1024);
+    update_camera_position(state.player);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);

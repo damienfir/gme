@@ -3,8 +3,8 @@
 #include <cmath>
 
 struct Vec2 {
-    float x;
-    float y;
+    float x = 0;
+    float y = 0;
 };
 
 Vec2 operator-(Vec2 a) {
@@ -13,6 +13,10 @@ Vec2 operator-(Vec2 a) {
 
 Vec2 operator-(Vec2 a, Vec2 b) {
     return Vec2{a.x-b.x, a.y-b.y};
+}
+
+Vec2 operator-(Vec2 a, float b) {
+    return Vec2{a.x-b, a.y-b};
 }
 
 Vec2 operator+(Vec2 a, Vec2 b) {
