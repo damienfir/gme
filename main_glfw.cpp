@@ -164,9 +164,15 @@ struct Controls {
 };
 
 struct Player {
+    enum State {
+        PLAYER_FLYING,
+        PLAYER_ON_WALL
+    };
+
     Vec2 pos;
     Vec2 vel;
     float size;
+    State state;
 };
 
 struct Sprite {
@@ -498,7 +504,7 @@ void draw() {
     draw_point(state.camera.to_viewport(state.player.pos), {0, 0, 1, 1}, state.camera.to_viewport(state.player.size));
 
     for (const Wall& wall : state.walls) {
-        draw_line(state.camera.to_viewport(wall.a), state.camera.to_viewport(wall.b), {1,1,1,1}, state.camera.to_viewport(1));
+        draw_line(state.camera.to_viewport(wall.a), state.camera.to_viewport(wall.b), {0.5,0.5,0.5,1}, state.camera.to_viewport(1));
     }
 
     // draw_gradient();
@@ -570,10 +576,7 @@ void update_camera_position(Player player) {
 void update(float dt) {
     Player player = state.player;
 
-    if (state.controls.use_js) {
-        player.vel.x += state.controls.js.x * 0.03;
-        player.vel.y += state.controls.js.y * 0.03;
-    } else {
+    if (player.state == Player::State::PLAYER_ON_WALL) {
         // float player_acc = 20;
         // if (state.controls.left) {
         //     player.vel.x -= player_acc * dt;
@@ -591,34 +594,44 @@ void update(float dt) {
         Vec2 push;
         if (state.controls.left) {
             push = {-1, 0};
-            state.controls.left = false;
         } else if (state.controls.right) {
             push = {1, 0};
-            state.controls.right = false;
         } else if (state.controls.up) {
             push = {0, -1};
-            state.controls.up = false;
         } else if (state.controls.down) {
             push = {0, 1};
-            state.controls.down = false;
         }
 
         if (push.x != 0 or push.y != 0) {
-            Vec2 pos_after_push = player.pos + push;
-            bool pushed = false;
+            bool pushed_torwards = false;
+            bool pushed_away = false;
             for (int i = 0; i < (int)state.walls.size(); ++i) {
                 Wall w = state.walls[i];
-                if (crossed_line(state.player.pos, pos_after_push, w.a, w.b)) {
-                    pushed = true;
+                if (crossed_line(state.player.pos, player.pos + push, w.a, w.b)) {
+                    pushed_torwards = true;
+                    break;
+                }
+                if (crossed_line(state.player.pos, player.pos - push, w.a, w.b)) {
+                    pushed_away = true;
                     break;
                 }
             }
 
-            if (pushed) {
+            if (pushed_torwards) {
                 player.vel = -push * 10;
+                player.state = Player::State::PLAYER_FLYING;
+                state.controls.left = false;
+                state.controls.right = false;
+                state.controls.up = false;
+                state.controls.down = false;
+            } else if (!pushed_away) {
+                player.vel = push * 5;
             }
+        } else {
+            player.vel = {};
         }
     }
+
     player.pos = player.pos + player.vel * dt;
 
     for (int i = 0; i < (int)state.walls.size(); ++i) {
@@ -626,6 +639,7 @@ void update(float dt) {
         if (crossed_line(state.player.pos, player.pos, w.a, w.b)) {
             player.pos = state.player.pos;
             player.vel = {0, 0};
+            player.state = Player::State::PLAYER_ON_WALL;
             break;
         }
     }
@@ -740,7 +754,7 @@ int main(int argc, char** argv) {
         .player = Player{
             .pos = Vec2{15, 18},
             .vel = Vec2{-10, 0},
-            .size = 1
+            .size = 2
         },
         .camera = {
             .position = Vec2{0, 0},
