@@ -37,6 +37,10 @@ struct Timer {
     }
 };
 
+void print_vec(const char* name, Vec2 v) {
+    printf("%s: %.2f, %.2f\n", name, v.x, v.y);
+}
+
 struct Rect {
     float x;
     float y;
@@ -104,6 +108,13 @@ struct Camera {
         return a * res_x / size_x;
     }
 
+    Vec2 from_viewport(Vec2 v) {
+        return Vec2{
+            .x = (v.x * size_x / res_x) + position.x,
+            .y = (v.y * size_y / res_y) + position.y,
+        };
+    }
+
     void set_target_view(Vec2 new_position, float new_size_x, float new_size_y) {
         pos_animation_x.start(position.x, new_position.x, 0.5);
         pos_animation_y.start(position.y, new_position.y, 0.5);
@@ -116,10 +127,14 @@ struct Camera {
         pos_animation_y.update(dt);
         size_animation_x.update(dt);
         size_animation_y.update(dt);
-        position.x = pos_animation_x.value;
-        position.y = pos_animation_y.value;
-        size_x = size_animation_x.value;
-        size_y = size_animation_y.value;
+        if (pos_animation_x.animating)
+            position.x = pos_animation_x.value;
+        if (pos_animation_y.animating)
+            position.y = pos_animation_y.value;
+        if (size_animation_x.animating)
+            size_x = size_animation_x.value;
+        if (size_animation_y.animating)
+            size_y = size_animation_y.value;
     }
 };
 
@@ -166,6 +181,7 @@ struct Controls {
     Trigger open_door;
     bool use_js;
     Vec2 js;
+    Vec2 mouse;
 };
 
 struct Player {
@@ -295,12 +311,44 @@ struct GameState {
 
 GameState state;
 
+void open_or_close_door(Door* d) {
+    if (d->animation_id >= 0) return;
+
+    int id = state.animations.add();
+    d->animation_id = id;
+    Animation* a = state.animations.get(id);
+    if (d->closed) {
+        a->start(0, 1, 1);
+        d->closed = false;
+    } else {
+        a->start(1, 0, 1);
+        d->closed = true;
+    }
+}
+
+void set_door_openness(Door d, float openness) {
+    Wall* w = &state.walls[d.door_id];
+    Vec2 slide_vector = openness * (d.a - d.b);
+    w->a = d.a + slide_vector;
+    w->b = d.b + slide_vector;
+}
 
 void add_door(Door d) {
     int id = state.walls.size();
-    state.walls.push_back(Wall{.a = d.a, .b = d.b});
     d.door_id = id;
+    Wall w = {.a = d.a, .b = d.b};
+    state.walls.push_back(w);
     state.doors.push_back(d);
+    set_door_openness(d, d.closed ? 0 : 1);
+}
+
+bool is_door(int wall_id) {
+    for (auto& d : state.doors) {
+        if (d.door_id == wall_id)
+            return true;
+    }
+
+    return false;
 }
 
 float randf() {
@@ -547,39 +595,76 @@ void draw_gradient() {
         }
 }
 
-bool is_door(int wall_id) {
-    for (auto& d : state.doors) {
-        if (d.door_id == wall_id)
-            return true;
-    }
-
-    return false;
-}
-
 void draw() {
     glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     init_solid();
+
+    Camera c = state.camera;
     
-    draw_point(state.camera.to_viewport(state.player.pos), {0, 0, 1, 1}, state.camera.to_viewport(state.player.size));
+    draw_point(c.to_viewport(state.player.pos), {0, 0, 1, 1}, c.to_viewport(state.player.size));
 
     for (const auto& door : state.doors) {
-        draw_line(state.camera.to_viewport(door.a), state.camera.to_viewport(door.b), {0.3,0.3,0.3,1}, state.camera.to_viewport(0.1));
+        draw_line(c.to_viewport(door.a), c.to_viewport(door.b), {0.3,0.3,0.3,1}, state.camera.to_viewport(0.1));
     }
 
     for (int i = 0; i < (int)state.walls.size(); ++i) {
         Wall wall = state.walls[i];
         if (is_door(i)) {
-            draw_line(state.camera.to_viewport(wall.a), state.camera.to_viewport(wall.b), {0.8,0.8,0.8,1}, state.camera.to_viewport(0.5));
+            draw_line(c.to_viewport(wall.a), c.to_viewport(wall.b), {0.8,0.8,0.8,1}, c.to_viewport(0.5));
         } else {
-            draw_line(state.camera.to_viewport(wall.a), state.camera.to_viewport(wall.b), {0.5,0.5,0.5,1}, state.camera.to_viewport(1));
+            draw_line(c.to_viewport(wall.a), c.to_viewport(wall.b), {0.5,0.5,0.5,1}, c.to_viewport(1));
         }
     }
+
+    draw_point(c.to_viewport(c.from_viewport(state.controls.mouse)), {1, 0, 0, 1}, 10);
 
     // draw_gradient();
     // draw_water();
     draw_texture();
+}
+
+struct DistanceResult {
+    float distance;
+    bool within_segment;
+};
+
+DistanceResult distance_point_line(Vec2 p, Vec2 a, Vec2 b) {
+    // print_vec("a", a);
+    // print_vec("b", b);
+    // print_vec("p", p);
+    Vec2 AB = normalize(b - a);
+    Vec2 AP = p - a;
+    Vec2 BP = p - b;
+    // print_vec("AB", AB);
+    // print_vec("AP", AP);
+    // print_vec("BP", BP);
+
+    DistanceResult res;
+    res.within_segment = false;
+
+    Vec2 perp = Vec2{AB.y, -AB.x};
+    res.distance = dot(AP, perp);
+
+    if (dot(AB, AP) < 0) {
+        // res.distance = norm(AP);
+        // printf("dot(AB, AP) < 0\n");
+        // printf("distance: %f\n", res.distance);
+        return res;
+    }
+
+    if (dot(-AB, BP) < 0) {
+        // res.distance = norm(BP);
+        // printf("dot(-AB, BP) < 0\n");
+        // printf("distance: %f\n", res.distance);
+        return res;
+    }
+
+    res.within_segment = true;
+
+    // printf("distance: %f\n", res.distance);
+    return res;
 }
 
 bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
@@ -602,21 +687,36 @@ bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
     return false;
 }
 
-float distance_point_line(Vec2 p, Vec2 a, Vec2 b) {
-    Vec2 AB = normalize(a - b);
-    Vec2 AP = p - a;
-    Vec2 BP = p - b;
+bool crossed_line2(Vec2 pos_prev, Vec2 pos_next, float radius, Vec2 a, Vec2 b) {
+    DistanceResult d_prev = distance_point_line(pos_prev, a, b);
+    DistanceResult d_next = distance_point_line(pos_next, a, b);
 
-    if (dot(AB, AP) < 0) {
-        return norm(AP);
+    if (!d_prev.within_segment and !d_next.within_segment) {
+        printf("false1\n");
+        return false;
     }
 
-    if (dot(-AB, BP) < 0) {
-        return norm(BP);
+    float d0 = d_prev.distance;
+    float d1 = d_next.distance;
+    printf("prev_d: %f, next_d: %f\n", d0, d1);
+    // if ((d0 > radius and d1 > radius)
+    //         or (d0 < -radius and d1 < -radius))
+    //     return false;
+    if (d0 > 0 and d1 <= 0) {
+        printf("true1\n");
+        return true;
+    }
+    if (d0 <= 0 and d1 > 0) {
+        printf("true2\n");
+        return true;
+    }
+    if (std::abs(d0) >= radius and std::abs(d1) < radius) {
+        printf("true3\n");
+        return true;
     }
 
-    Vec2 perp = Vec2{AB.y, -AB.x};
-    return std::abs(dot(AP, perp));
+    printf("false2\n");
+    return false;
 }
 
 void update_player_with_gravity(float dt) {
@@ -648,30 +748,22 @@ bool player_in_room(Player p, Room r) {
         and p.pos.y <= r.bbox[1].y;
 }
 
-void update_camera_position(Player player) {
+void update_camera_position(Player player, bool instant=false) {
     for (Room room : state.rooms) {
         if (player_in_room(player, room)) {
             float margin = 3;
             float target_size_x = room.bbox[1].x - room.bbox[0].x + 2*margin;
             float target_size_y = room.bbox[1].y - room.bbox[0].y + 2*margin;
-            state.camera.set_target_view(room.bbox[0] - margin, target_size_x, target_size_y);
+            Vec2 new_pos = room.bbox[0] - margin;
+            if (instant) {
+                state.camera.position = new_pos;
+                state.camera.size_x = target_size_x;
+                state.camera.size_y = target_size_y;
+            } else {
+                state.camera.set_target_view(new_pos, target_size_x, target_size_y);
+            }
             return;
         }
-    }
-}
-
-void open_or_close_door(Door* d) {
-    if (d->animation_id >= 0) return;
-
-    int id = state.animations.add();
-    d->animation_id = id;
-    Animation* a = state.animations.get(id);
-    if (d->closed) {
-        a->start(0, 1, 1);
-        d->closed = false;
-    } else {
-        a->start(1, 0, 1);
-        d->closed = true;
     }
 }
 
@@ -707,11 +799,11 @@ void update(float dt) {
             bool pushed_torwards = false;
             bool pushed_away = false;
             for (auto w : state.walls) {
-                if (crossed_line(state.player.pos, player.pos + push, w.a, w.b)) {
+                if (crossed_line2(state.player.pos, player.pos + push, player.size, w.a, w.b)) {
                     pushed_torwards = true;
                     break;
                 }
-                if (crossed_line(state.player.pos, player.pos - push, w.a, w.b)) {
+                if (crossed_line2(state.player.pos, player.pos - push, player.size, w.a, w.b)) {
                     pushed_away = true;
                     break;
                 }
@@ -737,14 +829,15 @@ void update(float dt) {
     if (state.controls.open_door.get()) {
         for (int i = 0; i < (int)state.doors.size(); ++i) {
             Door* d = &state.doors[i];
-            if (distance_point_line(state.player.pos, d->a, d->b) <= state.player.size + 0.5) {
+            float dist = distance_point_line(state.player.pos, d->a, d->b).distance;
+            if (std::abs(dist) <= state.player.size + 0.5) {
                 open_or_close_door(d);
             }
         }
     }
 
     for (auto w : state.walls) {
-        if (crossed_line(state.player.pos, player.pos, w.a, w.b)) {
+        if (crossed_line2(state.player.pos, player.pos, player.size, w.a, w.b)) {
             player.pos = state.player.pos;
             player.vel = {0, 0};
             player.state = Player::State::PLAYER_ON_WALL;
@@ -752,8 +845,12 @@ void update(float dt) {
         }
     }
 
+    // distance_point_line(state.camera.from_viewport(state.controls.mouse), state.walls[0].a, state.walls[0].b);
+    // Vec2 m = state.camera.from_viewport(state.controls.mouse);
+    // crossed_line2(m, m, 1, state.walls[0].a, state.walls[0].b);
+
     for (auto door : state.doors) {
-        if (crossed_line(state.player.pos, player.pos, door.a, door.b)) {
+        if (crossed_line2(state.player.pos, player.pos, player.size, door.a, door.b)) {
             // if (state.current_room == door.room0) {
             //     state.current_room = door.room1;
             // } else {
@@ -785,11 +882,7 @@ void update(float dt) {
             }
 
             Animation* a = state.animations.get(d.animation_id);
-            float openness = a->value;
-            Wall* w = &state.walls[d.door_id];
-            Vec2 slide_vector = openness * (d.a - d.b);
-            w->a = d.a + slide_vector;
-            w->b = d.b + slide_vector;
+            set_door_openness(d, a->value);
         }
     }
 
@@ -816,6 +909,12 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         }
     }
 }
+
+static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
+    state.controls.mouse.x = xpos;
+    state.controls.mouse.y = ypos;
+}
+
 
 float thresholded(float x, float t) {
     if (x < t && x > -t) return 0;
@@ -860,8 +959,8 @@ int main(int argc, char** argv) {
             Wall{Vec2{30, 10}, Vec2{30, 15}},
             Wall{Vec2{30, 20}, Vec2{30, 30}},
             Wall{Vec2{30, 30}, Vec2{10, 30}},
-
             Wall{Vec2{10, 30}, Vec2{10, 10}},
+
             Wall{Vec2{30, 10}, Vec2{90, 10}},
             Wall{Vec2{90, 10}, Vec2{90, 30}},
             Wall{Vec2{90, 30}, Vec2{30, 30}},
@@ -886,12 +985,12 @@ int main(int argc, char** argv) {
         }
     };
 
-    add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = true});
+    add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = false});
 
     init_texture();
     // init_water();
     generate_star_field(1024, 1024);
-    update_camera_position(state.player);
+    update_camera_position(state.player, true);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
@@ -901,6 +1000,7 @@ int main(int argc, char** argv) {
     timer_dt.start();
     
     glfwSetKeyCallback(window, key_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
 
     // glViewport(0, 0, gwa.width, gwa.height);
     
@@ -923,25 +1023,13 @@ int main(int argc, char** argv) {
 }
 
 
-#if 0
-
-Game features
-- Limited vision
-- Sound effect (going through a door)
-- Animations (door opening)
-- Star behind
-- Generate rooms procedurally
-- Gamepad control
-- Sprites
-
-Done
-- No gravity outdoor (use SAS, have to use environment or propellant to move)
-- Go to other room
-
-Game story
-- In a spaceship, explore
-- Magnetic floor (simulate gravity)
-- Can go outdoor
-
-#endif
+// Ideas:
+// - button to open door (can be away from the door)
+// - graphics look like blueprints (but appropriate for game)
+// - use mouse or joystick to aim trust vector
+// - stars and galaxies in background
+// - can exit the spaceship/spacestation
+//
+// Implemented:
+// - can grab handles on the walls to move alongside
 
