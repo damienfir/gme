@@ -141,12 +141,16 @@ struct Camera {
 
 struct Door {
     int door_id = -1;
-    int animation_id = -1;
     Vec2 a;
     Vec2 b;
     int room0;
     int room1;
     bool closed;
+};
+
+struct DoorAnimation {
+    Animation anim;
+    int door_id;
 };
 
 struct Room {
@@ -160,7 +164,7 @@ struct Room {
 struct Trigger {
     bool active = false;
 
-    bool get() {
+    bool get_and_deactivate() {
         if (active) {
             active = false;
             return true;
@@ -178,7 +182,8 @@ struct Controls {
     bool right = false;
     bool up = false;
     bool down = false;
-    Trigger open_door;
+    Trigger action;
+    Trigger push;
     bool use_js;
     Vec2 js;
     Vec2 mouse;
@@ -194,6 +199,7 @@ struct Player {
     Vec2 vel;
     float size;
     State state;
+    int on_wall_index;
 };
 
 struct Sprite {
@@ -258,47 +264,20 @@ struct Wall {
     Vec2 b;
 };
 
+struct Button {
+    Vec2 pos;
+    int door_id;
+};
+
 struct Animations {
-    std::vector<Animation> anims;
-    std::vector<int> free;
-
-    int add() {
-        while (!free.empty()) {
-            int id = free.back();
-            free.pop_back();
-            if (id < (int)anims.size()) {
-                return id;
-            }
-        }
-
-        anims.push_back(Animation{});
-        return anims.size()-1;
-    }
-
-    void remove(int id) {
-        free.push_back(id);
-        while (!active(anims.size()-1)) {
-            anims.pop_back();
-        }
-    }
-
-    bool active(int id) {
-        return id < (int)anims.size() and anims[id].animating;
-    }
-
-    Animation* get(int id) {
-        return &anims[id];
-    }
-
-    int size() {
-        return anims.size();
-    }
+    std::vector<DoorAnimation> door;
 };
 
 struct GameState {
     std::vector<Wall> walls;
     std::vector<Room> rooms;
     std::vector<Door> doors;
+    std::vector<Button> buttons;
     Player player;
     Controls controls;
     bool running;
@@ -311,35 +290,38 @@ struct GameState {
 
 GameState state;
 
-void open_or_close_door(Door* d) {
-    if (d->animation_id >= 0) return;
+void open_or_close_door(int id) {
+    if (!state.animations.door.empty()) return;
 
-    int id = state.animations.add();
-    d->animation_id = id;
-    Animation* a = state.animations.get(id);
+    DoorAnimation da = {.door_id = id};
+    Door* d = &state.doors[id];
     if (d->closed) {
-        a->start(0, 1, 1);
+        da.anim.start(0, 1, 1);
         d->closed = false;
     } else {
-        a->start(1, 0, 1);
+        da.anim.start(1, 0, 1);
         d->closed = true;
     }
+    state.animations.door.push_back(da);
 }
 
-void set_door_openness(Door d, float openness) {
+void set_door_openness(int id, float openness) {
+    Door d = state.doors[id];
     Wall* w = &state.walls[d.door_id];
     Vec2 slide_vector = openness * (d.a - d.b);
     w->a = d.a + slide_vector;
     w->b = d.b + slide_vector;
 }
 
-void add_door(Door d) {
+int add_door(Door d) {
     int id = state.walls.size();
     d.door_id = id;
     Wall w = {.a = d.a, .b = d.b};
     state.walls.push_back(w);
+    int door_id = state.doors.size();
     state.doors.push_back(d);
-    set_door_openness(d, d.closed ? 0 : 1);
+    set_door_openness(door_id, d.closed ? 0 : 1);
+    return door_id;
 }
 
 bool is_door(int wall_id) {
@@ -464,13 +446,17 @@ bool in_buffer(int x, int y) {
     return x >= 0 and y >= 0 and x < state.tex.image.w and y < state.tex.image.h;
 }
 
+RGBA alpha_add_onto(RGBA col, RGBA existing) {
+    return clamp01(col + (1-col.a)*existing);
+}
+
 void draw_line(Vec2 a, Vec2 b, RGBA color, float thickness) {
     Image* buf = &state.tex.image;
     float t = thickness/2;
-    int x0 = std::floor(std::min(a.x, b.x) - t + 0.5);
-    int y0 = std::floor(std::min(a.y, b.y) - t + 0.5);
-    int x1 = std::ceil(std::max(a.x, b.x) + t - 0.5);
-    int y1 = std::ceil(std::max(a.y, b.y) + t - 0.5);
+    int x0 = std::floor(std::min(a.x, b.x) - t);
+    int y0 = std::floor(std::min(a.y, b.y) - t);
+    int x1 = std::ceil(std::max(a.x, b.x) + t);
+    int y1 = std::ceil(std::max(a.y, b.y) + t);
     Vec2 ba = normalize(b - a);
     Vec2 normal = Vec2{-ba.y, ba.x};
     for (int y = y0; y <= y1; ++y)
@@ -491,18 +477,16 @@ void draw_line(Vec2 a, Vec2 b, RGBA color, float thickness) {
                     }
                 }
 
-            RGBA col = value * color;
-            buf->at(x, y) = clamp01(col + (1-col.a)*buf->at(x, y));
+            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
         }
 }
 
 void draw_point(Vec2 pos, RGBA color, float radius) {
     Image* buf = &state.tex.image;
-    float t = radius/2;
-    int x0 = std::floor(pos.x - t + 0.5);
-    int y0 = std::floor(pos.y - t + 0.5);
-    int x1 = std::ceil(pos.x + t - 0.5);
-    int y1 = std::ceil(pos.y + t - 0.5);
+    int x0 = std::floor(pos.x - radius);
+    int y0 = std::floor(pos.y - radius);
+    int x1 = std::ceil(pos.x + radius);
+    int y1 = std::ceil(pos.y + radius);
     for (int y = y0; y <= y1; ++y)
         for (int x = x0; x <= x1; ++x) {
             if (!in_buffer(x, y)) continue;
@@ -516,14 +500,39 @@ void draw_point(Vec2 pos, RGBA color, float radius) {
                 for (int xi = 0; xi < ss; ++xi) {
                     Vec2 xy = p + Vec2{offset + xi*2.f*offset, offset + yi*2.f*offset};
                     float distance = norm(xy - pos);
-                    if (distance < t) {
+                    if (distance < radius) {
                         value += factor;
                     }
                 }
 
-            RGBA c = value * color;
-            RGBA output = c + (1-c.a) * buf->at(x, y);
-            buf->at(x, y) = clamp01(output);
+            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
+        }
+}
+
+void draw_rectangle(Vec2 tl, Vec2 br, RGBA color) {
+    Image* buf = &state.tex.image;
+    int x0 = std::floor(tl.x);
+    int y0 = std::floor(tl.y);
+    int x1 = std::ceil(br.x);
+    int y1 = std::ceil(br.y);
+    for (int y = y0; y <= y1; ++y)
+        for (int x = x0; x <= x1; ++x) {
+            if (!in_buffer(x, y)) continue;
+
+            const int ss = 4;
+            const float factor = 1.f/(ss*ss);
+            const float offset = 1.f/(ss*2);
+            float value = 0;
+            Vec2 p{(float)x, (float)y};  // no 0.5 offset here
+            for (int yi = 0; yi < ss; ++yi) 
+                for (int xi = 0; xi < ss; ++xi) {
+                    Vec2 xy = p + Vec2{offset + xi*2.f*offset, offset + yi*2.f*offset};
+                    if (xy.x >= tl.x and xy.x <= br.x and xy.y >= tl.y and xy.y < br.y) {
+                        value += factor;
+                    }
+                }
+
+            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
         }
 }
 
@@ -614,11 +623,14 @@ void draw() {
         if (is_door(i)) {
             draw_line(c.to_viewport(wall.a), c.to_viewport(wall.b), {0.8,0.8,0.8,1}, c.to_viewport(0.5));
         } else {
-            draw_line(c.to_viewport(wall.a), c.to_viewport(wall.b), {0.5,0.5,0.5,1}, c.to_viewport(1));
+            draw_line(c.to_viewport(wall.a), c.to_viewport(wall.b), {0.5,0.5,0.5,1}, c.to_viewport(0.5));
         }
     }
 
-    draw_point(c.to_viewport(c.from_viewport(state.controls.mouse)), {1, 0, 0, 1}, 10);
+    for (Button b : state.buttons) {
+        Vec2 p = b.pos;
+        draw_rectangle(c.to_viewport(Vec2{p.x-0.5f, p.y-0.5f}), c.to_viewport(Vec2{p.x+0.5f,p.y+0.5f}), RGBA{0,1,0,1});
+    }
 
     // draw_gradient();
     // draw_water();
@@ -631,39 +643,24 @@ struct DistanceResult {
 };
 
 DistanceResult distance_point_line(Vec2 p, Vec2 a, Vec2 b) {
-    // print_vec("a", a);
-    // print_vec("b", b);
-    // print_vec("p", p);
     Vec2 AB = normalize(b - a);
     Vec2 AP = p - a;
     Vec2 BP = p - b;
-    // print_vec("AB", AB);
-    // print_vec("AP", AP);
-    // print_vec("BP", BP);
-
-    DistanceResult res;
-    res.within_segment = false;
 
     Vec2 perp = Vec2{AB.y, -AB.x};
+    DistanceResult res;
+    res.within_segment = false;
     res.distance = dot(AP, perp);
 
     if (dot(AB, AP) < 0) {
-        // res.distance = norm(AP);
-        // printf("dot(AB, AP) < 0\n");
-        // printf("distance: %f\n", res.distance);
         return res;
     }
 
     if (dot(-AB, BP) < 0) {
-        // res.distance = norm(BP);
-        // printf("dot(-AB, BP) < 0\n");
-        // printf("distance: %f\n", res.distance);
         return res;
     }
 
     res.within_segment = true;
-
-    // printf("distance: %f\n", res.distance);
     return res;
 }
 
@@ -692,30 +689,21 @@ bool crossed_line2(Vec2 pos_prev, Vec2 pos_next, float radius, Vec2 a, Vec2 b) {
     DistanceResult d_next = distance_point_line(pos_next, a, b);
 
     if (!d_prev.within_segment and !d_next.within_segment) {
-        printf("false1\n");
         return false;
     }
 
     float d0 = d_prev.distance;
     float d1 = d_next.distance;
-    printf("prev_d: %f, next_d: %f\n", d0, d1);
-    // if ((d0 > radius and d1 > radius)
-    //         or (d0 < -radius and d1 < -radius))
-    //     return false;
     if (d0 > 0 and d1 <= 0) {
-        printf("true1\n");
         return true;
     }
     if (d0 <= 0 and d1 > 0) {
-        printf("true2\n");
         return true;
     }
     if (std::abs(d0) >= radius and std::abs(d1) < radius) {
-        printf("true3\n");
         return true;
     }
 
-    printf("false2\n");
     return false;
 }
 
@@ -767,6 +755,15 @@ void update_camera_position(Player player, bool instant=false) {
     }
 }
 
+Vec2 get_wall_normal_towards(Wall w, Vec2 p) {
+    Vec2 AB = normalize(w.b - w.a);
+    Vec2 normal = Vec2{AB.y, -AB.x};
+    if (dot(normal, p-w.a) < 0) {
+        return -normal;
+    }
+    return normal;
+}
+
 void update(float dt) {
     Player player = state.player;
 
@@ -785,69 +782,62 @@ void update(float dt) {
         //     player.vel.y += player_acc * dt;
         // }
 
-        Vec2 push;
-        if (state.controls.left) {
-            push = {-1, 0}; } else if (state.controls.right) {
-            push = {1, 0};
-        } else if (state.controls.up) {
-            push = {0, -1};
-        } else if (state.controls.down) {
-            push = {0, 1};
-        }
+        Wall w = state.walls[player.on_wall_index];
 
-        if (push.x != 0 or push.y != 0) {
-            bool pushed_torwards = false;
-            bool pushed_away = false;
-            for (auto w : state.walls) {
-                if (crossed_line2(state.player.pos, player.pos + push, player.size, w.a, w.b)) {
-                    pushed_torwards = true;
-                    break;
-                }
+        if (state.controls.push.get_and_deactivate()) {
+            Vec2 normal = get_wall_normal_towards(w, player.pos);
+            player.vel = normal * 20;
+            player.state = Player::State::PLAYER_FLYING;
+        } else {
+
+            Vec2 push;
+            if (state.controls.left) {
+                push = {-1, 0};
+            } else if (state.controls.right) {
+                push = {1, 0};
+            } else if (state.controls.up) {
+                push = {0, -1};
+            } else if (state.controls.down) {
+                push = {0, 1};
+            }
+
+            if (push.x != 0 or push.y != 0) {
+                bool pushed_away = false;
                 if (crossed_line2(state.player.pos, player.pos - push, player.size, w.a, w.b)) {
                     pushed_away = true;
-                    break;
                 }
-            }
 
-            if (pushed_torwards) {
-                player.vel = -push * 10;
-                player.state = Player::State::PLAYER_FLYING;
-                state.controls.left = false;
-                state.controls.right = false;
-                state.controls.up = false;
-                state.controls.down = false;
-            } else if (!pushed_away) {
-                player.vel = push * 5;
+                if (!pushed_away) {
+                    player.vel = push * 10;
+                }
+            } else {
+                player.vel = {};
             }
-        } else {
-            player.vel = {};
         }
     }
 
     player.pos = player.pos + player.vel * dt;
 
-    if (state.controls.open_door.get()) {
-        for (int i = 0; i < (int)state.doors.size(); ++i) {
-            Door* d = &state.doors[i];
-            float dist = distance_point_line(state.player.pos, d->a, d->b).distance;
-            if (std::abs(dist) <= state.player.size + 0.5) {
-                open_or_close_door(d);
+    if (state.controls.action.get_and_deactivate()) {
+        for (Button b : state.buttons) {
+            float dist = norm(player.pos - b.pos);
+            if (dist < player.size + 0.5) {
+                open_or_close_door(b.door_id);
+                break;
             }
         }
     }
 
-    for (auto w : state.walls) {
+    for (int wall_index = 0; wall_index < (int)state.walls.size(); ++wall_index) {
+        Wall w = state.walls[wall_index];
         if (crossed_line2(state.player.pos, player.pos, player.size, w.a, w.b)) {
             player.pos = state.player.pos;
             player.vel = {0, 0};
             player.state = Player::State::PLAYER_ON_WALL;
+            player.on_wall_index = wall_index;
             break;
         }
     }
-
-    // distance_point_line(state.camera.from_viewport(state.controls.mouse), state.walls[0].a, state.walls[0].b);
-    // Vec2 m = state.camera.from_viewport(state.controls.mouse);
-    // crossed_line2(m, m, 1, state.walls[0].a, state.walls[0].b);
 
     for (auto door : state.doors) {
         if (crossed_line2(state.player.pos, player.pos, player.size, door.a, door.b)) {
@@ -865,24 +855,13 @@ void update(float dt) {
 
     state.player = player;
 
-    for (int i = 0; i < (int)state.animations.size(); ++i) {
-        Animation* a = state.animations.get(i);
-        a->update(dt);
-        printf("animation %d value: %f \n", i, a->value);
-        if (!state.animations.active(i)) {
-            state.animations.remove(i);
-        }
-    }
+    if (!state.animations.door.empty()) {
+        DoorAnimation* da = &state.animations.door[0];
+        da->anim.update(dt);
+        set_door_openness(da->door_id, da->anim.value);
 
-    for (auto &d : state.doors) {
-        if (d.animation_id >= 0) {
-            if (!state.animations.active(d.animation_id)) {
-                d.animation_id = -1;
-                continue;
-            }
-
-            Animation* a = state.animations.get(d.animation_id);
-            set_door_openness(d, a->value);
+        if (!da->anim.animating) {
+            state.animations.door.clear();
         }
     }
 
@@ -897,7 +876,8 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             case GLFW_KEY_RIGHT: state.controls.right = true; break;
             case GLFW_KEY_UP: state.controls.up = true; break;
             case GLFW_KEY_DOWN: state.controls.down = true; break;
-            case GLFW_KEY_SPACE: state.controls.open_door.set(); break;
+            case GLFW_KEY_SPACE: state.controls.action.set(); break;
+            case GLFW_KEY_ENTER: state.controls.push.set(); break;
         }
 
     } else if (action == GLFW_RELEASE) {
@@ -974,7 +954,7 @@ int main(int argc, char** argv) {
         .player = Player{
             .pos = Vec2{15, 18},
             .vel = Vec2{-10, 0},
-            .size = 2
+            .size = 1
         },
         .camera = {
             .position = Vec2{0, 0},
@@ -982,10 +962,11 @@ int main(int argc, char** argv) {
             .size_y = 30,
             .res_x = 1024,
             .res_y = 1024
-        }
+        },
     };
 
-    add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = false});
+    int door_id = add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = true});
+    state.buttons.push_back(Button{.pos = Vec2{10, 18}, .door_id = door_id });
 
     init_texture();
     // init_water();
@@ -1015,6 +996,7 @@ int main(int argc, char** argv) {
         update(dt);
 
         draw();
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
@@ -1024,12 +1006,16 @@ int main(int argc, char** argv) {
 
 
 // Ideas:
-// - button to open door (can be away from the door)
 // - graphics look like blueprints (but appropriate for game)
 // - use mouse or joystick to aim trust vector
 // - stars and galaxies in background
-// - can exit the spaceship/spacestation
+// - can exit the spaceship/spacestation (how to move? maybe tether)
+//
+// Development:
+// - design a nice spaceship
+// - import sprites
 //
 // Implemented:
 // - can grab handles on the walls to move alongside
-
+// - button to open door (can be away from the door)
+//
