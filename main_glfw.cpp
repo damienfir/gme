@@ -3,50 +3,27 @@
 #include <GL/glu.h>
 #include <iostream>
 #include <bitset>
-#include <chrono>
 #include <thread>
 #include <vector>
-#include <png.h>
 
-#include "math.h"
+#include "math.hpp"
+#include "timer.hpp"
+#include "image.hpp"
 
-struct Timer {
-    std::chrono::time_point<std::chrono::high_resolution_clock> previous_timestamp;
-
-    void start() {
-        previous_timestamp = std::chrono::high_resolution_clock::now();
-    }
-
-    float tick() {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
-        previous_timestamp = now;
-        // if (ms > 0) {
-        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
-        // }
-        return ms/1000.f;
-    }
-
-    void sync(int ms) {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto elapsed = now - previous_timestamp;
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
-        }
-        previous_timestamp = now;
-    }
-};
 
 void print_vec(const char* name, Vec2 v) {
     printf("%s: %.2f, %.2f\n", name, v.x, v.y);
 }
 
-struct Rect {
-    float x;
-    float y;
-    float w;
-    float h;
-};
+void print_affine(const char* name, Affine m) {
+    printf("%s:\n", name);
+    printf("%.2f %.2f %.2f\n", m.m.m00, m.m.m01, m.t.x);
+    printf("%.2f %.2f %.2f\n", m.m.m10, m.m.m11, m.t.y);
+}
+
+void print_rgba(const char* name, RGBA c) {
+    printf("%s: %.2f, %.2f, %.2f, %.2f\n", name, c.r, c.g, c.b, c.a);
+}
 
 struct Animation {
     bool animating = false;
@@ -113,6 +90,12 @@ struct Camera {
             .x = (v.x * size_x / res_x) + position.x,
             .y = (v.y * size_y / res_y) + position.y,
         };
+    }
+
+    Affine view_transform() {
+        Affine translation = from_translation(-position);
+        Affine scale = from_scale(res_x / size_x);
+        return mul(scale, translation);
     }
 
     void set_target_view(Vec2 new_position, float new_size_x, float new_size_y) {
@@ -189,6 +172,16 @@ struct Controls {
     Vec2 mouse;
 };
 
+struct Sprite {
+    int w;
+    int h;
+    RGBA* data;
+
+    RGBA at(int x, int y) {
+        return data[y * w + x];
+    }
+};
+
 struct Player {
     enum State {
         PLAYER_FLYING,
@@ -198,16 +191,16 @@ struct Player {
     Vec2 pos;
     Vec2 vel;
     float size;
+    float scale;
     State state;
     int on_wall_index;
-};
+    Sprite sprite;
 
-struct Sprite {
-    GLuint tex;
-    float x0;
-    float y0;
-    float x1;
-    float y1;
+    Affine model_transform() {
+        Affine s = from_scale(scale);
+        Affine t = from_translation(pos);
+        return mul(t, s);
+    }
 };
 
 struct Buffer {
@@ -223,6 +216,10 @@ struct Image {
 
     RGBA& at(int x, int y) {
         return data[y * w + x];
+    }
+
+    void add_onto(int x, int y, RGBA c) {
+        data[y*w+x] = clamp01(c + (1-c.a)*data[y*w+x]);
     }
 };
 
@@ -428,26 +425,8 @@ void update_water(float dt) {
     std::swap(w.heightmap, w.other);
 }
 
-void update_texture(float dt) {
-    // int w = state.tex.buffer.w;
-    // int h = state.tex.buffer.h;
-    // unsigned char* data = state.tex.buffer.data;
-    // int shift = dt*100;
-    // printf("shift: %d\n", shift);
-    // for (int y = 0; y < h; ++y)
-    //     for (int x = 0; x < w; ++x) {
-    //         data[y*w*3+x*3+0] = (data[y*w*3+x*3+0] + shift*2) % 255;
-    //         data[y*w*3+x*3+1] = (data[y*w*3+x*3+1] - shift) % 255;
-    //         data[y*w*3+x*3+2] = (data[y*w*3+x*3+2] + shift) % 255;
-    //     }
-}
-
 bool in_buffer(int x, int y) {
     return x >= 0 and y >= 0 and x < state.tex.image.w and y < state.tex.image.h;
-}
-
-RGBA alpha_add_onto(RGBA col, RGBA existing) {
-    return clamp01(col + (1-col.a)*existing);
 }
 
 void draw_line(Vec2 a, Vec2 b, RGBA color, float thickness) {
@@ -477,7 +456,7 @@ void draw_line(Vec2 a, Vec2 b, RGBA color, float thickness) {
                     }
                 }
 
-            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
+            buf->add_onto(x, y, value * color);
         }
 }
 
@@ -505,7 +484,7 @@ void draw_point(Vec2 pos, RGBA color, float radius) {
                     }
                 }
 
-            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
+            buf->add_onto(x, y, value * color);
         }
 }
 
@@ -532,7 +511,36 @@ void draw_rectangle(Vec2 tl, Vec2 br, RGBA color) {
                     }
                 }
 
-            buf->at(x, y) = alpha_add_onto(value * color, buf->at(x,y));
+            buf->add_onto(x, y, value * color);
+        }
+}
+
+RGBA lookup_nearest(Sprite s, Vec2 p) {
+    int x = p.x;
+    int y = p.y;
+    if (x < 0 or x >= s.w or y < 0 or y >= s.h) {
+        return {};
+    }
+    return s.data[y*s.w + x];
+}
+
+void draw_sprite(Sprite s, Affine t) {
+    Image* buf = &state.tex.image;
+
+    Vec2 tl = mul(t, Vec2{0, 0});
+    Vec2 tr = mul(t, Vec2{s.w-1.f, 0});
+    Vec2 br = mul(t, Vec2{s.w-1.f, s.h-1.f});
+    Vec2 bl = mul(t, Vec2{0, s.h-1.f});
+    int y0 = std::min(tl.y, std::min(tr.y, std::min(br.y, bl.y)));
+    int x0 = std::min(tl.x, std::min(tr.x, std::min(br.x, bl.x)));
+    int y1 = std::ceil(std::max(tl.y, std::max(tr.y, std::max(br.y, bl.y))));
+    int x1 = std::ceil(std::max(tl.x, std::max(tr.x, std::max(br.x, bl.x))));
+
+    Affine ti = inverse(t);
+    for (int tex_y = y0; tex_y <= y1; ++tex_y)
+        for (int tex_x = x0; tex_x <= x1; ++tex_x) {
+            Vec2 sprite_xy = mul(ti, Vec2{(float)tex_x, (float)tex_y});
+            buf->add_onto(tex_x, tex_y, lookup_nearest(s, sprite_xy));
         }
 }
 
@@ -612,7 +620,10 @@ void draw() {
 
     Camera c = state.camera;
     
-    draw_point(c.to_viewport(state.player.pos), {0, 0, 1, 1}, c.to_viewport(state.player.size));
+    // draw_point(c.to_viewport(state.player.pos), {0, 0, 1, 1}, c.to_viewport(state.player.size));
+    // Affine t = from_translation(c.to_viewport(state.player.pos));
+    Affine t = mul(c.view_transform(), state.player.model_transform());
+    draw_sprite(state.player.sprite, t);
 
     for (const auto& door : state.doors) {
         draw_line(c.to_viewport(door.a), c.to_viewport(door.b), {0.3,0.3,0.3,1}, state.camera.to_viewport(0.1));
@@ -635,76 +646,6 @@ void draw() {
     // draw_gradient();
     // draw_water();
     draw_texture();
-}
-
-struct DistanceResult {
-    float distance;
-    bool within_segment;
-};
-
-DistanceResult distance_point_line(Vec2 p, Vec2 a, Vec2 b) {
-    Vec2 AB = normalize(b - a);
-    Vec2 AP = p - a;
-    Vec2 BP = p - b;
-
-    Vec2 perp = Vec2{AB.y, -AB.x};
-    DistanceResult res;
-    res.within_segment = false;
-    res.distance = dot(AP, perp);
-
-    if (dot(AB, AP) < 0) {
-        return res;
-    }
-
-    if (dot(-AB, BP) < 0) {
-        return res;
-    }
-
-    res.within_segment = true;
-    return res;
-}
-
-bool crossed_line(Vec2 pos_prev, Vec2 pos_next, Vec2 line_a, Vec2 line_b) {
-    Vec2 BA = normalize(line_b - line_a);
-    Vec2 PA = normalize(pos_next - line_a);
-    Vec2 PB = normalize(pos_next - line_b);
-
-    if (dot(BA, PA) < 0 || dot(-BA, PB) < 0) {
-        return false;
-    }
-
-    Vec2 perp = Vec2{BA.y, -BA.x};
-    float dist_prev = dot((pos_prev - line_a), perp);
-    float dist_next = dot(PA, perp);
-    if ((dist_prev > 0 && dist_next <= 0) || 
-            (dist_prev < 0 && dist_next >= 0)) {
-        return true;
-    }
-
-    return false;
-}
-
-bool crossed_line2(Vec2 pos_prev, Vec2 pos_next, float radius, Vec2 a, Vec2 b) {
-    DistanceResult d_prev = distance_point_line(pos_prev, a, b);
-    DistanceResult d_next = distance_point_line(pos_next, a, b);
-
-    if (!d_prev.within_segment and !d_next.within_segment) {
-        return false;
-    }
-
-    float d0 = d_prev.distance;
-    float d1 = d_next.distance;
-    if (d0 > 0 and d1 <= 0) {
-        return true;
-    }
-    if (d0 <= 0 and d1 > 0) {
-        return true;
-    }
-    if (std::abs(d0) >= radius and std::abs(d1) < radius) {
-        return true;
-    }
-
-    return false;
 }
 
 void update_player_with_gravity(float dt) {
@@ -913,6 +854,63 @@ void joystick_control(int jid) {
     }
 }
 
+struct Crop {
+    int x;
+    int y;
+    int w;
+    int h;
+};
+
+Sprite sprite_from_png(PngImage im, Crop roi) {
+    Sprite s;
+    s.w = roi.w;
+    s.h = roi.h;
+    s.data = (RGBA*)malloc(s.w*s.h*sizeof(RGBA));
+
+    for (int crop_y = roi.y; crop_y < roi.y + roi.w; ++crop_y) 
+        for (int crop_x = roi.x; crop_x < roi.x + roi.w; ++crop_x) {
+            RGBA c;
+            c.r = im.data[crop_y * im.width * 4 + crop_x*4 + 0];
+            c.g = im.data[crop_y * im.width * 4 + crop_x*4 + 1];
+            c.b = im.data[crop_y * im.width * 4 + crop_x*4 + 2];
+            c.a = im.data[crop_y * im.width * 4 + crop_x*4 + 3];
+            int sprite_x = crop_x - roi.x;
+            int sprite_y = crop_y - roi.y;
+            s.data[sprite_y * roi.w + sprite_x] = c;
+        }
+
+    return s;
+}
+
+Sprite load_player_sprite() {
+    return sprite_from_png(read_png("resources/sprites.png"), Crop{.x = 0, .y = 0, .w = 16, .h = 16});
+    //
+    Sprite s;
+
+    s.w = 4;
+    s.h = 4;
+    s.data = (RGBA*)malloc(s.w*s.h*sizeof(RGBA));
+    // for (int i = 0; i < s.w*s.h; ++i) s.data[i] = {1,1,1,1};
+    s.data[0] = {0,0,0,1};
+    s.data[1] = {0,0,1,1};
+    s.data[2] = {0,1,0,1};
+    s.data[3] = {0,1,1,1};
+    s.data[4] = {1,0,0,1};
+    s.data[5] = {1,0,1,1};
+    s.data[6] = {1,1,0,1};
+    s.data[7] = {1,1,1,1};
+    s.data[8] = {0,0,0,0.5};
+    s.data[9] = {0,0,0.5,0.5};
+    s.data[10] = {0,0.5,0,0.5};
+    s.data[11] = {0,0.5,0.5,0.5};
+    s.data[12] = {0.5,0,0,0.5};
+    s.data[13] = {0.5,0,0.5,0.5};
+    s.data[14] = {0.5,0.5,0,0.5};
+    s.data[15] = {0.5,0.5,0.5,0.5};
+
+    return s;
+}
+
 
 int main(int argc, char** argv) {
     std::srand(std::time(0));
@@ -954,7 +952,9 @@ int main(int argc, char** argv) {
         .player = Player{
             .pos = Vec2{15, 18},
             .vel = Vec2{-10, 0},
-            .size = 1
+            .size = 1,
+            .scale = 0.2,
+            .sprite = load_player_sprite()
         },
         .camera = {
             .position = Vec2{0, 0},

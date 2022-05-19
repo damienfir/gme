@@ -1,51 +1,5 @@
 
 
-struct Image {
-    int width;
-    int height;
-    unsigned char* data;
-};
-
-struct ImageRead {
-    Image image;
-    bool valid;
-    std::string message;
-};
-
-ImageRead read_png(const char* filename) {
-    ImageRead result;
-
-    png_image image;
-    image.version = PNG_IMAGE_VERSION;
-    image.opaque = NULL;
-
-    if (png_image_begin_read_from_file(&image, filename)) {
-        image.format = PNG_FORMAT_RGBA;
-
-        result.image.width = image.width;
-        result.image.height = image.height;
-
-        png_bytep buffer = (png_bytep)malloc(PNG_IMAGE_SIZE(image));
-        if (buffer != NULL) {
-            result.image.data = buffer;
-            if (png_image_finish_read(&image, NULL, buffer, 0, NULL)) {
-                result.valid = true;
-                return result;
-            } else {
-                result.message = image.message;
-                free(buffer);
-            }
-        } else {
-            result.message = image.message;
-            png_image_free(&image);
-        }
-    } else {
-        result.message = image.message;
-    }
-
-    result.valid = false;
-    return result;
-}
 
 Sprite make_sprite(Imageimage) {
     Sprite s;
