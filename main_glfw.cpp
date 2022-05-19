@@ -85,13 +85,6 @@ struct Camera {
         return a * res_x / size_x;
     }
 
-    Vec2 from_viewport(Vec2 v) {
-        return Vec2{
-            .x = (v.x * size_x / res_x) + position.x,
-            .y = (v.y * size_y / res_y) + position.y,
-        };
-    }
-
     Affine view_transform() {
         Affine translation = from_translation(-position);
         Affine scale = from_scale(res_x / size_x);
@@ -101,6 +94,12 @@ struct Camera {
     void set_target_view(Vec2 new_position, float new_size_x, float new_size_y) {
         pos_animation_x.start(position.x, new_position.x, 0.5);
         pos_animation_y.start(position.y, new_position.y, 0.5);
+        float aspect_ratio = (float)res_x/(float)res_y;
+        if (new_size_x / new_size_y < aspect_ratio) {
+            new_size_x = new_size_y / aspect_ratio;
+        } else {
+            new_size_y = new_size_x / aspect_ratio;
+        }
         size_animation_x.start(size_x, new_size_x, 0.5);
         size_animation_y.start(size_y, new_size_y, 0.5);
     }
@@ -531,10 +530,10 @@ void draw_sprite(Sprite s, Affine t) {
     Vec2 tr = mul(t, Vec2{s.w-1.f, 0});
     Vec2 br = mul(t, Vec2{s.w-1.f, s.h-1.f});
     Vec2 bl = mul(t, Vec2{0, s.h-1.f});
-    int y0 = std::min(tl.y, std::min(tr.y, std::min(br.y, bl.y)));
-    int x0 = std::min(tl.x, std::min(tr.x, std::min(br.x, bl.x)));
-    int y1 = std::ceil(std::max(tl.y, std::max(tr.y, std::max(br.y, bl.y))));
-    int x1 = std::ceil(std::max(tl.x, std::max(tr.x, std::max(br.x, bl.x))));
+    int y0 = std::max(0.f, std::min(tl.y, std::min(tr.y, std::min(br.y, bl.y))));
+    int x0 = std::max(0.f, std::min(tl.x, std::min(tr.x, std::min(br.x, bl.x))));
+    int y1 = std::min(buf->h-1.f, std::ceil(std::max(tl.y, std::max(tr.y, std::max(br.y, bl.y)))));
+    int x1 = std::min(buf->w-1.f, std::ceil(std::max(tl.x, std::max(tr.x, std::max(br.x, bl.x)))));
 
     Affine ti = inverse(t);
     for (int tex_y = y0; tex_y <= y1; ++tex_y)
@@ -620,8 +619,6 @@ void draw() {
 
     Camera c = state.camera;
     
-    // draw_point(c.to_viewport(state.player.pos), {0, 0, 1, 1}, c.to_viewport(state.player.size));
-    // Affine t = from_translation(c.to_viewport(state.player.pos));
     Affine t = mul(c.view_transform(), state.player.model_transform());
     draw_sprite(state.player.sprite, t);
 
@@ -957,15 +954,15 @@ int main(int argc, char** argv) {
             .sprite = load_player_sprite()
         },
         .camera = {
-            .position = Vec2{0, 0},
-            .size_x = 30,
-            .size_y = 30,
+            .position = Vec2{20, 10},
+            .size_x = 50,
+            .size_y = 50,
             .res_x = 1024,
             .res_y = 1024
         },
     };
 
-    int door_id = add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = true});
+    int door_id = add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = false});
     state.buttons.push_back(Button{.pos = Vec2{10, 18}, .door_id = door_id });
 
     init_texture();
