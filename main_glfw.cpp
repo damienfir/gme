@@ -937,16 +937,16 @@ int main(int argc, char** argv) {
     std::srand(std::time(0));
 
     if (!glfwInit()) {
-        std::cerr << "Cannot initialize GLFW\n";
-        return 1;
+        printf("Cannot initialize GLFW\n");
+        abort();
     }
 
     const int window_width = 1024;
     const int window_height = 1024;
     GLFWwindow * window = glfwCreateWindow(window_width, window_height, "Awesome game", NULL, NULL);
     if (!window) {
-        std::cerr << "Cannot open window\n";
-        return 1;
+        printf("Cannot open window\n");
+        abort();
     }
 
     glfwMakeContextCurrent(window);
@@ -1002,8 +1002,6 @@ int main(int argc, char** argv) {
     
     glfwSetKeyCallback(window, key_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
-
-    // glViewport(0, 0, gwa.width, gwa.height);
     
     state.running = true;
     while (state.running) {
@@ -1033,9 +1031,9 @@ int main(int argc, char** argv) {
 //
 // Development:
 // - design a nice spaceship
-// - import sprites
 //
 // Implemented:
 // - can grab handles on the walls to move alongside
 // - button to open door (can be away from the door)
+// - import sprites
 //
