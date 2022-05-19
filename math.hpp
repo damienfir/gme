@@ -191,6 +191,15 @@ Affine from_translation(Vec2 v) {
     return {.t = v};
 }
 
+Affine from_rotation(float rad) {
+    Affine a;
+    a.m.m00 = std::cos(rad);
+    a.m.m01 = -std::sin(rad);
+    a.m.m10 = std::sin(rad);
+    a.m.m11 = std::cos(rad);
+    return a;
+}
+
 Affine from_scale(float s) {
     Affine a;
     a.m.m00 = s;

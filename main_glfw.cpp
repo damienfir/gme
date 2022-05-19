@@ -198,6 +198,7 @@ struct Player {
     State state;
     int on_wall_index;
     Sprite sprite;
+    float rotation;
 
     Vec2 get_offset() {
         return Vec2 {
@@ -211,9 +212,12 @@ struct Player {
     }
 
     Affine model_transform() {
-        Affine s = from_scale(scale);
-        Affine t = from_translation(pos - get_offset());
-        return mul(t, s);
+        Vec2 offset = get_offset();
+        Affine m = from_scale(scale);
+        m = mul(from_translation(-offset), m);
+        m = mul(from_rotation(rotation), m);
+        m = mul(from_translation(offset), m);
+        return mul(from_translation(pos - offset), m);
     }
 };
 
@@ -771,6 +775,11 @@ void update(float dt) {
 
     player.pos = player.pos + player.vel * dt;
 
+    {
+        if (player.vel.x != 0 or player.vel.y != 0)
+            player.rotation = std::atan2(player.vel.y, player.vel.x);
+    }
+
     if (state.controls.action.get_and_deactivate()) {
         for (Button b : state.buttons) {
             float dist = norm(player.pos - b.pos);
@@ -971,8 +980,8 @@ int main(int argc, char** argv) {
             .position = Vec2{20, 10},
             .size_x = 50,
             .size_y = 50,
-            .res_x = 1024,
-            .res_y = 1024
+            .res_x = 256,
+            .res_y = 256
         },
     };
 
