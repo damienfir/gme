@@ -181,6 +181,11 @@ struct Sprite {
     }
 };
 
+struct BoundingBox {
+    Vec2 tl;
+    Vec2 br;
+};
+
 struct Player {
     enum State {
         PLAYER_FLYING,
@@ -189,15 +194,25 @@ struct Player {
 
     Vec2 pos;
     Vec2 vel;
-    float size;
     float scale;
     State state;
     int on_wall_index;
     Sprite sprite;
 
+    Vec2 get_offset() {
+        return Vec2 {
+            .x = scale * (sprite.w/2.f),
+            .y = scale * (sprite.h/2.f)
+        };
+    }
+
+    float collision_radius() {
+        return norm(scale * Vec2{(float)sprite.w, (float)sprite.h} / 2.f);
+    }
+
     Affine model_transform() {
         Affine s = from_scale(scale);
-        Affine t = from_translation(pos);
+        Affine t = from_translation(pos - get_offset());
         return mul(t, s);
     }
 };
@@ -741,7 +756,7 @@ void update(float dt) {
 
             if (push.x != 0 or push.y != 0) {
                 bool pushed_away = false;
-                if (crossed_line2(state.player.pos, player.pos - push, player.size, w.a, w.b)) {
+                if (crossed_line2(state.player.pos, player.pos - push, player.collision_radius(), w.a, w.b)) {
                     pushed_away = true;
                 }
 
@@ -759,7 +774,7 @@ void update(float dt) {
     if (state.controls.action.get_and_deactivate()) {
         for (Button b : state.buttons) {
             float dist = norm(player.pos - b.pos);
-            if (dist < player.size + 0.5) {
+            if (dist < player.collision_radius() + 0.5) {
                 open_or_close_door(b.door_id);
                 break;
             }
@@ -768,7 +783,7 @@ void update(float dt) {
 
     for (int wall_index = 0; wall_index < (int)state.walls.size(); ++wall_index) {
         Wall w = state.walls[wall_index];
-        if (crossed_line2(state.player.pos, player.pos, player.size, w.a, w.b)) {
+        if (crossed_line2(state.player.pos, player.pos, player.collision_radius(), w.a, w.b)) {
             player.pos = state.player.pos;
             player.vel = {0, 0};
             player.state = Player::State::PLAYER_ON_WALL;
@@ -778,7 +793,7 @@ void update(float dt) {
     }
 
     for (auto door : state.doors) {
-        if (crossed_line2(state.player.pos, player.pos, player.size, door.a, door.b)) {
+        if (crossed_line2(state.player.pos, player.pos, player.collision_radius(), door.a, door.b)) {
             // if (state.current_room == door.room0) {
             //     state.current_room = door.room1;
             // } else {
@@ -949,9 +964,8 @@ int main(int argc, char** argv) {
         .player = Player{
             .pos = Vec2{15, 18},
             .vel = Vec2{-10, 0},
-            .size = 1,
             .scale = 0.2,
-            .sprite = load_player_sprite()
+            .sprite = load_player_sprite(),
         },
         .camera = {
             .position = Vec2{20, 10},
