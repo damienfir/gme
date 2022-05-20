@@ -187,16 +187,9 @@ struct BoundingBox {
 };
 
 struct Player {
-    enum State {
-        PLAYER_FLYING,
-        PLAYER_ON_WALL
-    };
-
     Vec2 pos;
     Vec2 vel;
     float scale;
-    State state;
-    int on_wall_index;
     Sprite sprite;
     float rotation;
 
@@ -631,7 +624,7 @@ void draw_gradient() {
 }
 
 void draw() {
-    init_solid();
+    init_solid({0.1, 0.1, 0.1, 1});
 
     Camera c = state.camera;
     
@@ -721,7 +714,6 @@ Vec2 get_wall_normal_towards(Wall w, Vec2 p) {
 void update(float dt) {
     Player player = state.player;
 
-    if (player.state == Player::State::PLAYER_ON_WALL) {
         // float player_acc = 20;
         // if (state.controls.left) {
         //     player.vel.x -= player_acc * dt;
@@ -736,46 +728,24 @@ void update(float dt) {
         //     player.vel.y += player_acc * dt;
         // }
 
-        Wall w = state.walls[player.on_wall_index];
-
-        if (state.controls.push.get_and_deactivate()) {
-            Vec2 normal = get_wall_normal_towards(w, player.pos);
-            player.vel = normal * 20;
-            player.state = Player::State::PLAYER_FLYING;
-        } else {
-
-            Vec2 push;
-            if (state.controls.left) {
-                push = {-1, 0};
-            } else if (state.controls.right) {
-                push = {1, 0};
-            } else if (state.controls.up) {
-                push = {0, -1};
-            } else if (state.controls.down) {
-                push = {0, 1};
-            }
-
-            if (push.x != 0 or push.y != 0) {
-                bool pushed_away = false;
-                if (crossed_line2(state.player.pos, player.pos - push, player.collision_radius(), w.a, w.b)) {
-                    pushed_away = true;
-                }
-
-                if (!pushed_away) {
-                    player.vel = push * 10;
-                }
-            } else {
-                player.vel = {};
-            }
-        }
+    const float speed = 20;
+    player.vel = {};
+    if (state.controls.left) {
+        player.vel.x = -1;
     }
-
+    if (state.controls.right) {
+        player.vel.x = 1;
+    }
+    if (state.controls.up) {
+        player.vel.y = -1;
+    } else if (state.controls.down) {
+        player.vel.y = 1;
+    }
+    player.vel = player.vel * speed;
     player.pos = player.pos + player.vel * dt;
 
-    {
-        if (player.vel.x != 0 or player.vel.y != 0)
-            player.rotation = std::atan2(player.vel.y, player.vel.x);
-    }
+    if (player.vel.x != 0 or player.vel.y != 0)
+        player.rotation = std::atan2(player.vel.y, player.vel.x);
 
     if (state.controls.action.get_and_deactivate()) {
         for (Button b : state.buttons) {
@@ -792,20 +762,12 @@ void update(float dt) {
         if (crossed_line2(state.player.pos, player.pos, player.collision_radius(), w.a, w.b)) {
             player.pos = state.player.pos;
             player.vel = {0, 0};
-            player.state = Player::State::PLAYER_ON_WALL;
-            player.on_wall_index = wall_index;
             break;
         }
     }
 
     for (auto door : state.doors) {
         if (crossed_line2(state.player.pos, player.pos, player.collision_radius(), door.a, door.b)) {
-            // if (state.current_room == door.room0) {
-            //     state.current_room = door.room1;
-            // } else {
-            //     state.current_room = door.room0;
-            // }
-
             printf("Changed room\n");
             update_camera_position(player);
             break;
@@ -902,31 +864,6 @@ Sprite sprite_from_png(PngImage im, Crop roi) {
 
 Sprite load_player_sprite() {
     return sprite_from_png(read_png("resources/sprites.png"), Crop{.x = 0, .y = 0, .w = 16, .h = 16});
-    //
-    Sprite s;
-
-    s.w = 4;
-    s.h = 4;
-    s.data = (RGBA*)malloc(s.w*s.h*sizeof(RGBA));
-    // for (int i = 0; i < s.w*s.h; ++i) s.data[i] = {1,1,1,1};
-    s.data[0] = {0,0,0,1};
-    s.data[1] = {0,0,1,1};
-    s.data[2] = {0,1,0,1};
-    s.data[3] = {0,1,1,1};
-    s.data[4] = {1,0,0,1};
-    s.data[5] = {1,0,1,1};
-    s.data[6] = {1,1,0,1};
-    s.data[7] = {1,1,1,1};
-    s.data[8] = {0,0,0,0.5};
-    s.data[9] = {0,0,0.5,0.5};
-    s.data[10] = {0,0.5,0,0.5};
-    s.data[11] = {0,0.5,0.5,0.5};
-    s.data[12] = {0.5,0,0,0.5};
-    s.data[13] = {0.5,0,0.5,0.5};
-    s.data[14] = {0.5,0.5,0,0.5};
-    s.data[15] = {0.5,0.5,0.5,0.5};
-
-    return s;
 }
 
 
@@ -977,8 +914,8 @@ int main(int argc, char** argv) {
             .position = Vec2{20, 10},
             .size_x = 50,
             .size_y = 50,
-            .res_x = 256,
-            .res_y = 256
+            .res_x = 512,
+            .res_y = 512
         },
     };
 
