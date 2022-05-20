@@ -68,11 +68,16 @@ struct Camera {
     float size_y;
     int res_x;  // texture resolution
     int res_y;
+    bool follow_player;
 
     Animation pos_animation_x;
     Animation pos_animation_y;
     Animation size_animation_x;
     Animation size_animation_y;
+
+    Vec2 get_size() {
+        return Vec2{(float)size_x, (float)size_y};
+    }
 
     Vec2 to_viewport(Vec2 v) {
         return Vec2{
@@ -91,9 +96,13 @@ struct Camera {
         return mul(scale, translation);
     }
 
-    void set_target_view(Vec2 new_position, float new_size_x, float new_size_y) {
-        pos_animation_x.start(position.x, new_position.x, 0.5);
-        pos_animation_y.start(position.y, new_position.y, 0.5);
+    void set_target_position(Vec2 new_position, float duration) {
+        pos_animation_x.start(position.x, new_position.x, duration);
+        pos_animation_y.start(position.y, new_position.y, duration);
+    }
+
+    void set_target_position_and_view(Vec2 new_position, float new_size_x, float new_size_y) {
+        set_target_position(new_position, 0.5);
         float aspect_ratio = (float)res_x/(float)res_y;
         if (new_size_x / new_size_y < aspect_ratio) {
             new_size_x = new_size_y / aspect_ratio;
@@ -143,7 +152,7 @@ struct Room {
     }
 };
 
-struct Trigger {
+struct ActionTrigger {
     bool active = false;
 
     bool get_and_deactivate() {
@@ -164,8 +173,8 @@ struct Controls {
     bool right = false;
     bool up = false;
     bool down = false;
-    Trigger action;
-    Trigger push;
+    ActionTrigger action;
+    ActionTrigger push;
     bool use_js;
     Vec2 js;
     Vec2 mouse;
@@ -192,6 +201,7 @@ struct Player {
     float scale;
     Sprite sprite;
     float rotation;
+    int near_button_index;
 
     Vec2 get_offset() {
         return Vec2 {
@@ -644,9 +654,13 @@ void draw() {
         }
     }
 
-    for (Button b : state.buttons) {
-        Vec2 p = b.pos;
-        draw_rectangle(c.to_viewport(Vec2{p.x-0.5f, p.y-0.5f}), c.to_viewport(Vec2{p.x+0.5f,p.y+0.5f}), RGBA{0,1,0,1});
+    for (int button_index = 0; button_index < (int)state.buttons.size(); ++button_index) {
+        Vec2 p = state.buttons[button_index].pos;
+        RGBA color = {0, 0.5, 0, 1};
+        if (state.player.near_button_index == button_index) {
+            color = RGBA{0, 1, 0, 1};
+        }
+        draw_rectangle(c.to_viewport(Vec2{p.x-0.5f, p.y-0.5f}), c.to_viewport(Vec2{p.x+0.5f,p.y+0.5f}), color);
     }
 
     // draw_gradient();
@@ -684,6 +698,8 @@ bool player_in_room(Player p, Room r) {
 }
 
 void update_camera_position(Player player, bool instant=false) {
+    state.camera.follow_player = false;
+
     for (Room room : state.rooms) {
         if (player_in_room(player, room)) {
             float margin = 3;
@@ -695,11 +711,14 @@ void update_camera_position(Player player, bool instant=false) {
                 state.camera.size_x = target_size_x;
                 state.camera.size_y = target_size_y;
             } else {
-                state.camera.set_target_view(new_pos, target_size_x, target_size_y);
+                state.camera.set_target_position_and_view(new_pos, target_size_x, target_size_y);
             }
             return;
         }
     }
+
+    // player is in space, following him
+    state.camera.follow_player = true;
 }
 
 Vec2 get_wall_normal_towards(Wall w, Vec2 p) {
@@ -730,30 +749,44 @@ void update(float dt) {
 
     const float speed = 20;
     player.vel = {};
+
     if (state.controls.left) {
         player.vel.x = -1;
     }
+
     if (state.controls.right) {
         player.vel.x = 1;
     }
+
     if (state.controls.up) {
         player.vel.y = -1;
-    } else if (state.controls.down) {
+    }
+
+    if (state.controls.down) {
         player.vel.y = 1;
     }
-    player.vel = player.vel * speed;
+
+    if (!is_zero(player.vel)) {
+        player.vel = normalize(player.vel) * speed;
+        player.rotation = std::atan2(player.vel.y, player.vel.x);
+    }
+
     player.pos = player.pos + player.vel * dt;
 
-    if (player.vel.x != 0 or player.vel.y != 0)
-        player.rotation = std::atan2(player.vel.y, player.vel.x);
 
     if (state.controls.action.get_and_deactivate()) {
-        for (Button b : state.buttons) {
-            float dist = norm(player.pos - b.pos);
-            if (dist < player.collision_radius() + 0.5) {
-                open_or_close_door(b.door_id);
-                break;
-            }
+        if (player.near_button_index >= 0) {
+            open_or_close_door(state.buttons[player.near_button_index].door_id);
+        }
+    }
+
+    player.near_button_index = -1;
+    for (int button_index = 0; button_index < (int)state.buttons.size(); ++button_index) {
+        Button b = state.buttons[button_index];
+        float dist = norm(player.pos - b.pos);
+        if (dist < player.collision_radius() + 0.5) {
+            player.near_button_index = button_index;
+            break;
         }
     }
 
@@ -775,6 +808,10 @@ void update(float dt) {
     }
 
     state.player = player;
+
+    if (state.camera.follow_player) {
+        state.camera.set_target_position(state.player.pos - state.camera.get_size() / 2.f, 0.1);
+    }
 
     if (!state.animations.door.empty()) {
         DoorAnimation* da = &state.animations.door[0];
@@ -914,13 +951,15 @@ int main(int argc, char** argv) {
             .position = Vec2{20, 10},
             .size_x = 50,
             .size_y = 50,
-            .res_x = 512,
-            .res_y = 512
+            .res_x = 1024,
+            .res_y = 1024
         },
     };
 
-    int door_id = add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .room0 = 0, .room1 = 1, .closed = false});
-    state.buttons.push_back(Button{.pos = Vec2{10, 18}, .door_id = door_id });
+    int door_id = add_door(Door{.a = Vec2{30,20}, .b = Vec2{30, 15}, .closed = false});
+    state.buttons.push_back(Button{.pos = Vec2{11, 18}, .door_id = door_id });
+
+    int sas_id = add_door(Door{.a = Vec2{15,10}, .b = Vec2{20, 10}, .closed = false});
 
     init_texture();
     // init_water();
@@ -957,7 +996,10 @@ int main(int argc, char** argv) {
 // - graphics look like blueprints (but appropriate for game)
 // - use mouse or joystick to aim trust vector
 // - stars and galaxies in background
-// - can exit the spaceship/spacestation (how to move? maybe tether)
+// - can exit the spaceship/spacestation (how to move? maybe tether or truster)
+// - button connects to a door via a line on the flow
+// - button to deactivate magnetism (the player floats and moves via handles on floor and walls, bumps on walls like a real collision)
+// - 
 //
 // Development:
 // - design a nice spaceship

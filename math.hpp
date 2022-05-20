@@ -18,6 +18,10 @@ struct Vec2 {
     float y = 0;
 };
 
+bool is_zero(Vec2 v) {
+    return v.x == 0 and v.y == 0;
+}
+
 Vec2 operator-(Vec2 a) {
     return Vec2{-a.x, -a.y};
 }
