@@ -631,9 +631,6 @@ void draw_gradient() {
 }
 
 void draw() {
-    glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     init_solid();
 
     Camera c = state.camera;
@@ -992,10 +989,6 @@ int main(int argc, char** argv) {
     // init_water();
     generate_star_field(1024, 1024);
     update_camera_position(state.player, true);
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_POINT_SMOOTH);
-    glEnable(GL_BLEND);  
 
     Timer timer_dt;
     timer_dt.start();
