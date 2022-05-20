@@ -68,7 +68,6 @@ struct Camera {
     float size_y;
     int res_x;  // texture resolution
     int res_y;
-    bool follow_player;
 
     Animation pos_animation_x;
     Animation pos_animation_y;
@@ -101,16 +100,20 @@ struct Camera {
         pos_animation_y.start(position.y, new_position.y, duration);
     }
 
-    void set_target_position_and_view(Vec2 new_position, float new_size_x, float new_size_y) {
-        set_target_position(new_position, 0.5);
+    void set_target_size(float new_size_x, float new_size_y, float duration) {
         float aspect_ratio = (float)res_x/(float)res_y;
         if (new_size_x / new_size_y < aspect_ratio) {
             new_size_x = new_size_y / aspect_ratio;
         } else {
             new_size_y = new_size_x / aspect_ratio;
         }
-        size_animation_x.start(size_x, new_size_x, 0.5);
-        size_animation_y.start(size_y, new_size_y, 0.5);
+        size_animation_x.start(size_x, new_size_x, duration);
+        size_animation_y.start(size_y, new_size_y, duration);
+    }
+
+    void set_target_position_and_view(Vec2 new_position, float new_size_x, float new_size_y) {
+        set_target_position(new_position, 0.5);
+        set_target_size(new_size_x, new_size_y, 0.5);
     }
     
     void update(float dt) {
@@ -202,6 +205,7 @@ struct Player {
     Sprite sprite;
     float rotation;
     int near_button_index;
+    bool is_in_space;
 
     Vec2 get_offset() {
         return Vec2 {
@@ -697,11 +701,11 @@ bool player_in_room(Player p, Room r) {
         and p.pos.y <= r.bbox[1].y;
 }
 
-void update_camera_position(Player player, bool instant=false) {
-    state.camera.follow_player = false;
+void update_camera_position(Player* player, bool instant=false) {
+    player->is_in_space = false;
 
     for (Room room : state.rooms) {
-        if (player_in_room(player, room)) {
+        if (player_in_room(*player, room)) {
             float margin = 3;
             float target_size_x = room.bbox[1].x - room.bbox[0].x + 2*margin;
             float target_size_y = room.bbox[1].y - room.bbox[0].y + 2*margin;
@@ -717,8 +721,8 @@ void update_camera_position(Player player, bool instant=false) {
         }
     }
 
-    // player is in space, following him
-    state.camera.follow_player = true;
+    player->is_in_space = true;
+    player->vel = {};
 }
 
 Vec2 get_wall_normal_towards(Wall w, Vec2 p) {
@@ -733,42 +737,56 @@ Vec2 get_wall_normal_towards(Wall w, Vec2 p) {
 void update(float dt) {
     Player player = state.player;
 
-        // float player_acc = 20;
-        // if (state.controls.left) {
-        //     player.vel.x -= player_acc * dt;
-        // }
-        // if (state.controls.right) {
-        //     player.vel.x += player_acc * dt;
-        // }
-        // if (state.controls.up) {
-        //     player.vel.y -= player_acc * dt;
-        // }
-        // if (state.controls.down) {
-        //     player.vel.y += player_acc * dt;
-        // }
+    if (player.is_in_space) {
 
-    const float speed = 20;
-    player.vel = {};
+        float player_acc = 5;
+        Vec2 thrust = {};
+        if (state.controls.left) {
+            thrust.x = -1;
+        }
+        if (state.controls.right) {
+            thrust.x = 1;
+        }
+        if (state.controls.up) {
+            thrust.y = -1;
+        }
+        if (state.controls.down) {
+            thrust.y = 1;
+        }
 
-    if (state.controls.left) {
-        player.vel.x = -1;
-    }
+        if (!is_zero(thrust)) {
+            player.rotation = std::atan2(thrust.y, thrust.x);
+            thrust = normalize(thrust) * player_acc;
+        }
 
-    if (state.controls.right) {
-        player.vel.x = 1;
-    }
+        player.vel = player.vel + thrust * dt;
 
-    if (state.controls.up) {
-        player.vel.y = -1;
-    }
+    } else {
 
-    if (state.controls.down) {
-        player.vel.y = 1;
-    }
+        const float speed = 20;
+        player.vel = {};
 
-    if (!is_zero(player.vel)) {
-        player.vel = normalize(player.vel) * speed;
-        player.rotation = std::atan2(player.vel.y, player.vel.x);
+        if (state.controls.left) {
+            player.vel.x = -1;
+        }
+
+        if (state.controls.right) {
+            player.vel.x = 1;
+        }
+
+        if (state.controls.up) {
+            player.vel.y = -1;
+        }
+
+        if (state.controls.down) {
+            player.vel.y = 1;
+        }
+
+        if (!is_zero(player.vel)) {
+            player.vel = normalize(player.vel) * speed;
+            player.rotation = std::atan2(player.vel.y, player.vel.x);
+        }
+
     }
 
     player.pos = player.pos + player.vel * dt;
@@ -802,14 +820,14 @@ void update(float dt) {
     for (auto door : state.doors) {
         if (crossed_line2(state.player.pos, player.pos, player.collision_radius(), door.a, door.b)) {
             printf("Changed room\n");
-            update_camera_position(player);
+            update_camera_position(&player);
             break;
         }
     }
 
     state.player = player;
 
-    if (state.camera.follow_player) {
+    if (state.player.is_in_space) {
         state.camera.set_target_position(state.player.pos - state.camera.get_size() / 2.f, 0.1);
     }
 
@@ -960,11 +978,12 @@ int main(int argc, char** argv) {
     state.buttons.push_back(Button{.pos = Vec2{11, 18}, .door_id = door_id });
 
     int sas_id = add_door(Door{.a = Vec2{15,10}, .b = Vec2{20, 10}, .closed = false});
+    state.buttons.push_back(Button{.pos = Vec2{23, 11}, .door_id = sas_id });
 
     init_texture();
     // init_water();
     generate_star_field(1024, 1024);
-    update_camera_position(state.player, true);
+    update_camera_position(&state.player, true);
 
     Timer timer_dt;
     timer_dt.start();
