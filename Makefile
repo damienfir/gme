@@ -1,4 +1,8 @@
-build/main: main_glfw.cpp math.hpp image.hpp
+build/main: main.cpp gfx.cpp portal2d.cpp
+	mkdir build || true
+	g++ -g -lglfw -lGL -lGLU -lGLEW -lpng -std=c++17 -Wall -O0 $^ -o $@
+
+build/main_glfw: main_glfw.cpp math.hpp image.hpp
 	mkdir build || true
 	g++ -g -lglfw -lGL -lGLU -lGLEW -lpng -std=c++17 -Wall -O2 $< -o $@
 

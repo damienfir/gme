@@ -1015,10 +1015,8 @@ int main(int argc, char** argv) {
 // - graphics look like blueprints (but appropriate for game)
 // - use mouse or joystick to aim trust vector
 // - stars and galaxies in background
-// - can exit the spaceship/spacestation (how to move? maybe tether or truster)
 // - button connects to a door via a line on the flow
 // - button to deactivate magnetism (the player floats and moves via handles on floor and walls, bumps on walls like a real collision)
-// - 
 //
 // Development:
 // - design a nice spaceship
@@ -1027,4 +1025,4 @@ int main(int argc, char** argv) {
 // - can grab handles on the walls to move alongside
 // - button to open door (can be away from the door)
 // - import sprites
-//
+// - can exit the spaceship/spacestation (how to move? maybe tether or truster)
