@@ -67,12 +67,10 @@ Move face_to_move(unsigned int face) {
 
 struct Tilemap {
     GridPosition grid[max_items];
-    // Vec2 positions[max_items];
     ItemType types[max_items];
     Portals portals[max_items];
     Sprite sprites[20];
     Affine transforms[max_items];
-    int player_id;
 
     int n_items = 0;
 
@@ -89,100 +87,10 @@ struct Tilemap {
         types[id] = type;
         return id;
     }
-
-    void add_player() {
-        int id = add_grid_entity(PLAYER, 0, 0);
-        player_id = id;
-        transforms[id] = mul(transforms[id], from_scale(0.05));
-    }
-
-    bool is_empty(GridPosition p) {
-        for (int id = 0; id < n_items; ++id) {
-            if (p == grid[id]) {
-                if (types[id] == EMPTY) {
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    MaybeId at(ItemType type, GridPosition p) {
-        for (int id = 0; id < n_items; ++id) {
-            if (p == grid[id]) {
-                if (types[id] == type) {
-                    return {.id = id, .valid = true};
-                }
-            }
-        }
-
-        return {.valid = false};
-    }
-
-    struct PortalFace {
-        int item_id;
-        int face;
-    };
-
-    PortalFace find_exit_face(PortalFace from) {
-        int tunnel_id = portals[from.item_id].tunnel[from.face];
-        for (int item_id = 0; item_id < max_items; ++item_id) {
-            if (types[item_id] == WALL) {
-                for (int other_face = 0; other_face < 4; ++other_face) {
-                    if (item_id == from.item_id and other_face == from.face) continue;
-                    if (portals[item_id].tunnel[other_face] == tunnel_id) {
-                        return {.item_id = item_id, .face = other_face};
-                    }
-                }
-            }
-        }
-
-        assert(false);
-    }
-
-    bool move(int id, Move m, GridPosition from) {
-        GridPosition p;
-        p.x = from.x + m.x;
-        p.y = from.y + m.y;
-
-        if (is_empty(p)) {
-            return false;
-        }
-
-        if (auto wall = at(WALL, p); wall.valid) {
-            auto face = move_to_face(m);
-            auto tunnel_id = portals[wall.id].tunnel[face];
-            if (tunnel_id >= 0) {
-                printf("teleport through tunnel %d\n", tunnel_id);
-                
-                auto other_portal = find_exit_face({.item_id = wall.id, .face = face});
-                Move next_move = face_to_move(other_portal.face);
-                return move(id, next_move, grid[other_portal.item_id]);
-            }
-            return false;
-        }
-
-        if (auto block = at(BLOCK, p); block.valid) {
-            if (!move(block.id, m, grid[block.id])) {
-                return false;
-            }
-        }
-
-        grid[id] = p;
-        transforms[id].t = {p.x, p.y};
-
-        return true;
-    }
-
-    void move_player(Move m) {
-        move(player_id, m, grid[player_id]);
-    }
 };
 
 Tilemap tm;
+int player_id;
 
 struct Crop {
     int x;
@@ -190,6 +98,97 @@ struct Crop {
     int w;
     int h;
 };
+
+void add_player() {
+    int id = tm.add_grid_entity(PLAYER, 0, 0);
+    player_id = id;
+    tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
+}
+
+bool is_empty(GridPosition p) {
+    for (int id = 0; id < tm.n_items; ++id) {
+        if (p == tm.grid[id]) {
+            if (tm.types[id] == EMPTY) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+MaybeId at(ItemType type, GridPosition p) {
+    for (int id = 0; id < tm.n_items; ++id) {
+        if (p == tm.grid[id]) {
+            if (tm.types[id] == type) {
+                return {.id = id, .valid = true};
+            }
+        }
+    }
+
+    return {.valid = false};
+}
+
+struct PortalFace {
+    int item_id;
+    int face;
+};
+
+PortalFace find_exit_face(PortalFace from) {
+    int tunnel_id = tm.portals[from.item_id].tunnel[from.face];
+    for (int item_id = 0; item_id < max_items; ++item_id) {
+        if (tm.types[item_id] == WALL) {
+            for (int other_face = 0; other_face < 4; ++other_face) {
+                if (item_id == from.item_id and other_face == from.face) continue;
+                if (tm.portals[item_id].tunnel[other_face] == tunnel_id) {
+                    return {.item_id = item_id, .face = other_face};
+                }
+            }
+        }
+    }
+
+    assert(false);
+}
+
+bool move(int id, Move m, GridPosition from) {
+    GridPosition p;
+    p.x = from.x + m.x;
+    p.y = from.y + m.y;
+
+    if (is_empty(p)) {
+        return false;
+    }
+
+    if (auto wall = at(WALL, p); wall.valid) {
+        auto face = move_to_face(m);
+        auto tunnel_id = tm.portals[wall.id].tunnel[face];
+        if (tunnel_id >= 0) {
+            printf("teleport through tunnel %d\n", tunnel_id);
+
+            auto other_portal = find_exit_face({.item_id = wall.id, .face = face});
+            Move next_move = face_to_move(other_portal.face);
+            return move(id, next_move, tm.grid[other_portal.item_id]);
+        }
+        return false;
+    }
+
+    if (auto block = at(BLOCK, p); block.valid) {
+        if (!move(block.id, m, tm.grid[block.id])) {
+            return false;
+        }
+    }
+
+    tm.grid[id] = p;
+    tm.transforms[id].t = {p.x, p.y};
+
+    return true;
+}
+
+void move_player(Move m) {
+    move(player_id, m, tm.grid[player_id]);
+}
 
 Sprite sprite_from_png(PngImage im, Crop roi) {
     Sprite s;
@@ -232,7 +231,7 @@ void portal2d_init() {
 
     tm.add_grid_entity(BLOCK, 3, 1);
 
-    tm.add_player();
+    add_player();
 
     tm.sprites[FLOOR].w = 1;
     tm.sprites[FLOOR].h = 1;
@@ -261,10 +260,10 @@ void portal2d_init() {
 void portal2d_key_input(int action, int key) {
     if (action == GLFW_PRESS) {
         switch (key) {
-            case GLFW_KEY_UP: tm.move_player({0, -1}); break;
-            case GLFW_KEY_LEFT: tm.move_player({-1, 0}); break;
-            case GLFW_KEY_DOWN: tm.move_player({0, 1}); break;
-            case GLFW_KEY_RIGHT: tm.move_player({1, 0}); break;
+            case GLFW_KEY_UP: move_player({0, -1}); break;
+            case GLFW_KEY_LEFT: move_player({-1, 0}); break;
+            case GLFW_KEY_DOWN: move_player({0, 1}); break;
+            case GLFW_KEY_RIGHT: move_player({1, 0}); break;
         }
     }
 }

@@ -1,9 +1,3 @@
-- draw 2d buffer
-- particles
-- draw lines, circles, ...
-- handle anti-aliasing
-
-
-Notes:
-
-Have full control of the pixels. Show them on screen and do some crazy effects with it.
+Plan: make it easier to prototype and try 2d puzzle games
+- Have a generic way of handling objects such that we can have a graphical editor for any game
+- Separate the game rules
