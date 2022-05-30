@@ -122,20 +122,25 @@ struct Tilemap {
         return {.valid = false};
     }
 
-    int find_exit_face(int id, int face) {
-        int tunnel_id = portals[id].tunnel[face];
+    struct PortalFace {
+        int item_id;
+        int face;
+    };
+
+    PortalFace find_exit_face(PortalFace from) {
+        int tunnel_id = portals[from.item_id].tunnel[from.face];
         for (int item_id = 0; item_id < max_items; ++item_id) {
             if (types[item_id] == WALL) {
                 for (int other_face = 0; other_face < 4; ++other_face) {
-                    if (item_id == id and other_face == face) continue;
+                    if (item_id == from.item_id and other_face == from.face) continue;
                     if (portals[item_id].tunnel[other_face] == tunnel_id) {
-                        return other_face;
+                        return {.item_id = item_id, .face = other_face};
                     }
                 }
             }
         }
 
-        return -1;
+        assert(false);
     }
 
     bool move(int id, Move m, GridPosition from) {
@@ -153,11 +158,9 @@ struct Tilemap {
             if (tunnel_id >= 0) {
                 printf("teleport through tunnel %d\n", tunnel_id);
                 
-                auto other_face = find_exit_face(wall.id, face);
-                if (other_face >= 0) {
-                    Move next_move = face_to_move(other_face);
-                    return move(id, next_move, grid[wall.id]);
-                }
+                auto other_portal = find_exit_face({.item_id = wall.id, .face = face});
+                Move next_move = face_to_move(other_portal.face);
+                return move(id, next_move, grid[other_portal.item_id]);
             }
             return false;
         }
@@ -221,7 +224,11 @@ void portal2d_init() {
 
     int wall_id = tm.add_grid_entity(WALL, 5, 5);
     tm.portals[wall_id].tunnel[0] = 0;
-    tm.portals[wall_id].tunnel[1] = 0;
+    tm.portals[wall_id].tunnel[1] = 1;
+    tm.portals[wall_id].tunnel[2] = 1;
+
+    int wall_id2 = tm.add_grid_entity(WALL, 2, 5);
+    tm.portals[wall_id2].tunnel[0] = 0;
 
     tm.add_grid_entity(BLOCK, 3, 1);
 
