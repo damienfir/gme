@@ -1,4 +1,4 @@
-build/main: main.cpp gfx.cpp portal2d.cpp
+build/main: main.cpp gfx.cpp portal2d.cpp math.cpp
 	mkdir build || true
 	g++ -g -lglfw -lGL -lGLU -lGLEW -lpng -std=c++17 -Wall -O0 $^ -o $@
 

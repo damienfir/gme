@@ -42,6 +42,9 @@ struct Sprite {
     RGBA* data;
 
     inline RGBA get(int x, int y) {
+        if (x < 0 || x >= w || y < 0 || y >= w) {
+            return {};
+        }
         return data[y*w+x];
     }
 };

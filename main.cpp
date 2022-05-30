@@ -175,6 +175,7 @@ int main(int argc, char** argv) {
         // update(dt);
 
         // terrain_draw();
+        gfx_clear_solid({});
         portal2d_draw();
         draw_texture();
 

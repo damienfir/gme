@@ -4,17 +4,17 @@
 #include <stdio.h>
 
 
-void print_vec(const char* name, Vec2 v) {
+inline void print_vec(const char* name, Vec2 v) {
     printf("%s: %.2f, %.2f\n", name, v.x, v.y);
 }
 
-void print_affine(const char* name, Affine m) {
+inline void print_affine(const char* name, Affine m) {
     printf("%s:\n", name);
     printf("%.2f %.2f %.2f\n", m.m.m00, m.m.m01, m.t.x);
     printf("%.2f %.2f %.2f\n", m.m.m10, m.m.m11, m.t.y);
 }
 
-void print_rgba(const char* name, RGBA c) {
+inline void print_rgba(const char* name, RGBA c) {
     printf("%s: %.2f, %.2f, %.2f, %.2f\n", name, c.r, c.g, c.b, c.a);
 }
 

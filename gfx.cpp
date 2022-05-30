@@ -120,45 +120,41 @@ void gfx_draw_rectangle(Vec2 tl, Vec2 br, RGBA color) {
         }
 }
 
+
 inline RGBA lookup_bilinear(Sprite s, Vec2 p) {
-    int x0 = floor(p.x);
-    int x1 = ceil(p.x);
-    int y0 = floor(p.y);
-    int y1 = ceil(p.y);
-    if (x0 < 0 || x1 >= s.w || y0 < 0 || y1 >= s.h) {
-        return {};
-    }
+    int x0 = p.x;
+    int y0 = p.y;
     float fx = p.x - (float)x0;
     float fy = p.y - (float)y0;
-    RGBA tl = s.get(floor(p.x), floor(p.y));
-    RGBA tr = s.get(ceil(p.x), floor(p.y));
-    RGBA br = s.get(ceil(p.x), ceil(p.y));
-    RGBA bl = s.get(floor(p.x), ceil(p.y));
+    RGBA tl = s.get(x0, y0);
+    RGBA tr = s.get(x0 + 1, y0);
+    RGBA br = s.get(x0 + 1, y0 + 1);
+    RGBA bl = s.get(x0, y0 + 1);
     return (1 - fx) * ((1-fy) * tl + fy * bl) + fx * ((1-fy) * tr + fy * br);
 }
 
 inline RGBA lookup_nearest(Sprite s, Vec2 p) {
-    int x = round(p.x);
-    int y = round(p.y);
-    if (x < 0 or x >= s.w or y < 0 or y >= s.h) {
-        return {};
-    }
-    return s.data[y*s.w + x];
+    int x = std::floor(p.x);
+    int y = std::floor(p.y);
+    return s.get(x, y);
 }
 
 void gfx_draw_sprite(Sprite s, Affine t, bool bilinear) {
     Vec2 tl = mul(t, Vec2{0, 0});
-    Vec2 tr = mul(t, Vec2{s.w-1.f, 0});
-    Vec2 br = mul(t, Vec2{s.w-1.f, s.h-1.f});
-    Vec2 bl = mul(t, Vec2{0, s.h-1.f});
-    int y0 = std::max(0.f, std::min(tl.y, std::min(tr.y, std::min(br.y, bl.y))));
+    Vec2 tr = mul(t, Vec2{s.w, 0});
+    Vec2 br = mul(t, Vec2{s.w, s.h});
+    Vec2 bl = mul(t, Vec2{0, s.h});
+    // print_vec("br", br);
+    // print_vec("bl", bl);
     int x0 = std::max(0.f, std::min(tl.x, std::min(tr.x, std::min(br.x, bl.x))));
-    int y1 = std::min(image.h-1.f, std::ceil(std::max(tl.y, std::max(tr.y, std::max(br.y, bl.y)))));
-    int x1 = std::min(image.w-1.f, std::ceil(std::max(tl.x, std::max(tr.x, std::max(br.x, bl.x)))));
+    int y0 = std::max(0.f, std::min(tl.y, std::min(tr.y, std::min(br.y, bl.y))));
+    int x1 = std::min((float)image.w, std::ceil(std::max(tl.x, std::max(tr.x, std::max(br.x, bl.x)))));
+    int y1 = std::min((float)image.h, std::ceil(std::max(tl.y, std::max(tr.y, std::max(br.y, bl.y)))));
+    // printf("x0: %d, x1: %d, y0: %d, y1: %d\n", x0, x1, y0, y1);
 
     Affine ti = inverse(t);
-    for (int tex_y = y0; tex_y <= y1; ++tex_y)
-        for (int tex_x = x0; tex_x <= x1; ++tex_x) {
+    for (int tex_y = y0; tex_y < y1; ++tex_y)
+        for (int tex_x = x0; tex_x < x1; ++tex_x) {
             Vec2 sprite_xy = mul(ti, Vec2{(float)tex_x, (float)tex_y});
             // add_onto(tex_x, tex_y, lookup_nearest(s, sprite_xy));
             RGBA c = bilinear ? lookup_bilinear(s, sprite_xy) : lookup_nearest(s, sprite_xy);
