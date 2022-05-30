@@ -171,7 +171,8 @@ int main(int argc, char** argv) {
             // joystick_control(GLFW_JOYSTICK_1);
         // }
 
-        // float dt = timer_dt.tick();
+        float dt = timer_dt.tick();
+        printf("fps: %.2f\n", 1/dt);
         // update(dt);
 
         // terrain_draw();

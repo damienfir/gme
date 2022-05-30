@@ -42,7 +42,7 @@ struct Portals {
 const int max_items = 128;
 const int tile_size = 100;
 
-unsigned int move_to_face(Move m) {
+int move_to_face(Move m) {
     assert(m.x != 0 || m.y != 0);
     if (m.x > 0) {
         return 3;
@@ -55,7 +55,7 @@ unsigned int move_to_face(Move m) {
     }
 }
 
-Move face_to_move(unsigned int face) {
+Move face_to_move(int face) {
     assert(face < 4);
     switch (face) {
         case 0: return {0, -1};
@@ -91,19 +91,7 @@ struct Tilemap {
 
 Tilemap tm;
 int player_id;
-
-struct Crop {
-    int x;
-    int y;
-    int w;
-    int h;
-};
-
-void add_player() {
-    int id = tm.add_grid_entity(PLAYER, 0, 0);
-    player_id = id;
-    tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
-}
+bool editor_mode = false;
 
 bool is_empty(GridPosition p) {
     for (int id = 0; id < tm.n_items; ++id) {
@@ -181,7 +169,7 @@ bool move(int id, Move m, GridPosition from) {
     }
 
     tm.grid[id] = p;
-    tm.transforms[id].t = {p.x, p.y};
+    tm.transforms[id].t = {(float)p.x, (float)p.y};
 
     return true;
 }
@@ -189,6 +177,13 @@ bool move(int id, Move m, GridPosition from) {
 void move_player(Move m) {
     move(player_id, m, tm.grid[player_id]);
 }
+
+struct Crop {
+    int x;
+    int y;
+    int w;
+    int h;
+};
 
 Sprite sprite_from_png(PngImage im, Crop roi) {
     Sprite s;
@@ -213,6 +208,12 @@ Sprite sprite_from_png(PngImage im, Crop roi) {
 
 Sprite load_player_sprite() {
     return sprite_from_png(read_png("resources/sprites.png"), Crop{.x = 0, .y = 0, .w = 16, .h = 16});
+}
+
+void add_player() {
+    int id = tm.add_grid_entity(PLAYER, 0, 0);
+    player_id = id;
+    tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
 }
 
 void portal2d_init() {
@@ -264,6 +265,7 @@ void portal2d_key_input(int action, int key) {
             case GLFW_KEY_LEFT: move_player({-1, 0}); break;
             case GLFW_KEY_DOWN: move_player({0, 1}); break;
             case GLFW_KEY_RIGHT: move_player({1, 0}); break;
+            case GLFW_KEY_ENTER: editor_mode = !editor_mode; break;
         }
     }
 }
@@ -273,15 +275,14 @@ void portal2d_update(float dt) {
 }
 
 void portal2d_draw() {
-    Vec2 dp = {(float)tile_size, (float)tile_size};
-
     Affine view_transform = from_scale(tile_size);
     for (int id = 0; id < tm.n_items; ++id) {
-        // Vec2 p = tm.positions[id];
-        ItemType type = tm.types[id];
-        // if (type == PLAYER) {
-        //     t = mul(from_translation(p * tile_size), from_scale(5));
-        // }
-        gfx_draw_sprite(tm.sprites[type], mul(view_transform, tm.transforms[id]), false);
+        auto type = tm.types[id];
+        auto view_model = mul(view_transform, tm.transforms[id]);
+        gfx_draw_sprite(tm.sprites[type], view_model, false);
+    }
+
+    if (editor_mode) {
+        gfx_draw_point({10, 10}, {1, 0, 0, 1}, 5);
     }
 }

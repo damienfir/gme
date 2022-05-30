@@ -28,10 +28,10 @@ inline RGBA& operator+=(RGBA &a, RGBA b) {
 
 inline RGBA clamp01(RGBA a) {
     RGBA b;
-    b.r = std::min(1.f, std::max(0.f, a.r));
-    b.g = std::min(1.f, std::max(0.f, a.g));
-    b.b = std::min(1.f, std::max(0.f, a.b));
-    b.a = std::min(1.f, std::max(0.f, a.a));
+    b.r = fmin(1.f, fmax(0.f, a.r));
+    b.g = fmin(1.f, fmax(0.f, a.g));
+    b.b = fmin(1.f, fmax(0.f, a.b));
+    b.a = fmin(1.f, fmax(0.f, a.a));
     return b;
 }
 

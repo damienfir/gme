@@ -1,10 +1,8 @@
 #ifndef MATH_HPP
 #define MATH_HPP
 
-#pragma once
-
-#include <cmath>
-#include <cassert>
+#include <math.h>
+#include <assert.h>
 
 struct Mat2 {
     float m00 = 1;
@@ -170,10 +168,10 @@ inline Affine from_translation(Vec2 v) {
 
 inline Affine from_rotation(float rad) {
     Affine a;
-    a.m.m00 = std::cos(rad);
-    a.m.m01 = -std::sin(rad);
-    a.m.m10 = std::sin(rad);
-    a.m.m11 = std::cos(rad);
+    a.m.m00 = cos(rad);
+    a.m.m01 = -sin(rad);
+    a.m.m10 = sin(rad);
+    a.m.m11 = cos(rad);
     return a;
 }
 
