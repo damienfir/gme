@@ -96,6 +96,7 @@ struct Tilemap {
 
 struct Editor {
     Vec2 mouse;
+    int selected = -1;
 };
 
 Tilemap tm;
@@ -140,6 +141,18 @@ MaybeId at(ItemType type, GridPosition p) {
     return {.valid = false};
 }
 
+MaybeId item_at(GridPosition p) {
+    for (int id = 0; id < tm.n_items; ++id) {
+        if (p == tm.grid[id]) {
+            if (tm.types[id] != FLOOR) {
+                return {.id = id, .valid = true};
+            }
+        }
+    }
+
+    return {.valid = false};
+}
+
 struct PortalFace {
     int item_id;
     int face;
@@ -148,7 +161,7 @@ struct PortalFace {
 PortalFace find_exit_face(PortalFace from) {
     int tunnel_id = tm.portals[from.item_id].tunnel[from.face];
     for (int item_id = 0; item_id < max_items; ++item_id) {
-        if (tm.types[item_id] == WALL) {
+        if (tm.types[item_id] == BLOCK) {
             for (int other_face = 0; other_face < 4; ++other_face) {
                 if (item_id == from.item_id and other_face == from.face) continue;
                 if (tm.portals[item_id].tunnel[other_face] == tunnel_id) {
@@ -161,6 +174,11 @@ PortalFace find_exit_face(PortalFace from) {
     assert(false);
 }
 
+void set_item_position(int id, GridPosition p) {
+    tm.grid[id] = p;
+    tm.transforms[id].t = {(float)tile_size * p.x, (float)tile_size * p.y};
+}
+
 bool move(int id, Move m, GridPosition from) {
     GridPosition p;
     p.x = from.x + m.x;
@@ -171,26 +189,28 @@ bool move(int id, Move m, GridPosition from) {
     }
 
     if (auto wall = at(WALL, p); wall.valid) {
-        auto face = move_to_face(m);
-        auto tunnel_id = tm.portals[wall.id].tunnel[face];
-        if (tunnel_id >= 0) {
-            printf("teleport through tunnel %d\n", tunnel_id);
-
-            auto other_portal = find_exit_face({.item_id = wall.id, .face = face});
-            Move next_move = face_to_move(other_portal.face);
-            return move(id, next_move, tm.grid[other_portal.item_id]);
-        }
         return false;
     }
 
     if (auto block = at(BLOCK, p); block.valid) {
+        auto face = move_to_face(m);
+        auto tunnel_id = tm.portals[block.id].tunnel[face];
+        if (tunnel_id >= 0) {
+            printf("teleport through tunnel %d\n", tunnel_id);
+
+            auto other_portal = find_exit_face({.item_id = block.id, .face = face});
+            Move next_move = face_to_move(other_portal.face);
+            if (move(id, next_move, tm.grid[other_portal.item_id])) {
+                return true;
+                // Don't return if false
+            }
+        }
         if (!move(block.id, m, tm.grid[block.id])) {
             return false;
         }
     }
 
-    tm.grid[id] = p;
-    tm.transforms[id].t = {(float)tile_size * p.x, (float)tile_size * p.y};
+    set_item_position(id, p);
 
     return true;
 }
@@ -237,41 +257,86 @@ void add_player() {
     tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
 }
 
-void place_item(ItemType type) {
-    int cols = count_cols();
+GridPosition editor_mouse_position() {
     float ratio = gfx_width() / tile_size;
     int x = editor.mouse.x * ratio;
     int y = editor.mouse.y * ratio;
-
-    if (at(type, {x, y}).valid) return;
-    if (type == PLAYER) {
-        if (at(WALL, {x, y}).valid) return;
-        if (at(BLOCK, {x, y}).valid) return;
-    }
-    if (type == WALL || type == BLOCK) {
-        if (at(PLAYER, {x, y}).valid) return;
-    }
-    tm.add_grid_entity(type, x, y);
+    return {x, y};
 }
 
-void remove_item() {
-    int cols = count_cols();
-    float ratio = gfx_width() / tile_size;
-    int x = editor.mouse.x * ratio;
-    int y = editor.mouse.y * ratio;
-    if (MaybeId wall = at(WALL, {x, y}); wall.valid) {
+void editor_place_item(ItemType type) {
+    GridPosition p = editor_mouse_position();
+
+    if (at(type, p).valid) return;
+    if (type == PLAYER) {
+        if (at(WALL, p).valid) return;
+        if (at(BLOCK, p).valid) return;
+    }
+    if (type == WALL || type == BLOCK) {
+        if (at(PLAYER, p).valid) return;
+    }
+    tm.add_grid_entity(type, p.x, p.y);
+}
+
+void editor_remove_item() {
+    GridPosition p = editor_mouse_position();
+    if (MaybeId wall = at(WALL, p); wall.valid) {
         tm.remove(wall.id);
         return;
     }
 
-    if (MaybeId block = at(BLOCK, {x, y}); block.valid) {
+    if (MaybeId block = at(BLOCK, p); block.valid) {
         tm.remove(block.id);
         return;
     }
 
-    if (MaybeId floor = at(FLOOR, {x, y}); floor.valid) {
+    if (MaybeId floor = at(FLOOR, p); floor.valid) {
         tm.remove(floor.id);
         return;
+    }
+}
+
+void editor_start_dragging() {
+    GridPosition p = editor_mouse_position();
+    if(MaybeId item = item_at(p); item.valid) {
+        editor.selected = item.id;
+    }
+}
+
+void editor_stop_dragging() {
+    if (editor.selected < 0) return;
+
+    GridPosition p = editor_mouse_position();
+    if (!item_at(p).valid) {
+        set_item_position(editor.selected, p);
+        editor.selected = -1;
+    }
+}
+
+int editor_selected_face() {
+    float ratio = gfx_width() / tile_size;
+    float x = editor.mouse.x * ratio;
+    float y = editor.mouse.y * ratio;
+    x = x - floor(x);
+    y = y - floor(y);
+    bool bottomleft = x < y;
+    bool topleft = 1 - y > x;
+
+    if (topleft && !bottomleft) return 0;
+    if (!topleft && !bottomleft) return 1;
+    if (!topleft && bottomleft) return 2;
+    if (topleft && bottomleft) return 3;
+}
+
+void editor_set_portal(int tunnel_id) {
+    GridPosition p = editor_mouse_position();
+    
+    if (MaybeId item = item_at(p); item.valid) {
+        if (tm.types[item.id] == BLOCK) {
+            int face = editor_selected_face();
+            printf("adding to face: %d\n", face);
+            tm.portals[item.id].tunnel[face] = tunnel_id;
+        }
     }
 }
 
@@ -281,15 +346,16 @@ void portal2d_init() {
             tm.add_grid_entity(FLOOR, x, y);
         }
 
-    int wall_id = tm.add_grid_entity(WALL, 5, 5);
-    tm.portals[wall_id].tunnel[0] = 0;
-    tm.portals[wall_id].tunnel[1] = 1;
-    tm.portals[wall_id].tunnel[2] = 1;
+    // tm.add_grid_entity(WALL, 5, 5);
+    // tm.add_grid_entity(WALL, 2, 5);
 
-    int wall_id2 = tm.add_grid_entity(WALL, 2, 5);
-    tm.portals[wall_id2].tunnel[0] = 0;
-
-    tm.add_grid_entity(BLOCK, 3, 1);
+    // int block1 = tm.add_grid_entity(BLOCK, 3, 1);
+    // tm.portals[block1].tunnel[1] = 1;
+    // tm.portals[block1].tunnel[2] = 1;
+    
+    // int block2 = tm.add_grid_entity(BLOCK, 4, 2);
+    // tm.portals[block2].tunnel[0] = 0;
+    // tm.portals[block2].tunnel[3] = 0;
 
     add_player();
 
@@ -329,10 +395,15 @@ void portal2d_key_input(int action, int key) {
 
         if (editor_mode) {
             switch (key) {
-                case GLFW_KEY_1: place_item(FLOOR); break;
-                case GLFW_KEY_2: place_item(WALL); break;
-                case GLFW_KEY_3: place_item(BLOCK); break;
-                case GLFW_KEY_X: remove_item(); break;
+                case GLFW_KEY_0: editor_set_portal(-1); break;
+                case GLFW_KEY_1: editor_set_portal(0); break;
+                case GLFW_KEY_2: editor_set_portal(1); break;
+                case GLFW_KEY_3: editor_set_portal(2); break;
+
+                case GLFW_KEY_F: editor_place_item(FLOOR); break;
+                case GLFW_KEY_W: editor_place_item(WALL); break;
+                case GLFW_KEY_B: editor_place_item(BLOCK); break;
+                case GLFW_KEY_X: editor_remove_item(); break;
             }
         }
     }
@@ -348,11 +419,15 @@ void portal2d_mouse_cursor_position(float xpos, float ypos) {
 void portal2d_mouse_button(int button, int action) {
     if (!editor_mode) return;
 
-    // if (action == GLFW_PRESS) {
-    //     if (button == GLFW_MOUSE_BUTTON_LEFT) {
-    //         place_item();
-    //     }
-    // }
+    if (action == GLFW_PRESS) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            editor_start_dragging();
+        }
+    } else if (action == GLFW_RELEASE) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            editor_stop_dragging();
+        }
+    }
 }
 
 void portal2d_update(float dt) {
@@ -385,7 +460,7 @@ void portal2d_draw() {
         auto view_model = mul(affine_eye(), tm.transforms[id]);
         gfx_draw_sprite(tm.sprites[type], view_model, false);
 
-        if (type == WALL) {
+        if (type == BLOCK) {
             const RGBA tunnel_colors[] = {
                 rgba_from_hex(0xff595e),
                 rgba_from_hex(0xffca3a),
