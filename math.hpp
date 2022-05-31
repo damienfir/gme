@@ -162,6 +162,10 @@ struct Affine {
     Vec2 t;
 };
 
+inline Affine affine_eye() {
+    return {};
+}
+
 inline Affine from_translation(Vec2 v) {
     return {.t = v};
 }
@@ -182,6 +186,10 @@ inline Affine from_scale(float s) {
     return a;
 }
 
+inline Affine affine_from_scale(float s) {
+    return from_scale(s);
+}
+
 inline Vec2 mul(Mat2 a, Vec2 v) {
     Vec2 w;
     w.x = a.m00 * v.x + a.m01 * v.y;
@@ -191,6 +199,10 @@ inline Vec2 mul(Mat2 a, Vec2 v) {
 
 inline Vec2 mul(Affine a, Vec2 v) {
     return mul(a.m, v) + a.t;
+}
+
+inline Vec2 multiply_affine_vec2(Affine a, Vec2 v) {
+    return mul(a, v);
 }
 
 // void test_mul_vec() {
@@ -216,6 +228,10 @@ inline Affine mul(Affine a, Affine b) {
     c.m = mul(a.m, b.m);
     c.t = mul(a.m, b.t) + a.t;
     return c;
+}
+
+inline Affine multiply_affine(Affine a, Affine b) {
+    return mul(a, b);
 }
 
 // void test_mul() {

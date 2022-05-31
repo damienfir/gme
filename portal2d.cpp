@@ -41,6 +41,7 @@ struct Portals {
 
 const int max_items = 128;
 const int tile_size = 100;
+const float tile_sizef = 100;
 
 int move_to_face(Move m) {
     assert(m.x != 0 || m.y != 0);
@@ -82,16 +83,36 @@ struct Tilemap {
 
     int add_grid_entity(ItemType type, int x, int y) {
         int id = new_id();
-        transforms[id] = from_translation({(float)x, (float)y});
+        transforms[id] = multiply_affine(from_scale(tile_sizef), from_translation({(float)x, (float)y}));
         grid[id] = {x, y};
         types[id] = type;
         return id;
     }
+
+    void remove(int id) {
+        types[id] = EMPTY;
+    }
+};
+
+struct Editor {
+    Vec2 mouse;
 };
 
 Tilemap tm;
 int player_id;
 bool editor_mode = false;
+Editor editor;
+
+int count_cols() {
+    int min = 10000000;
+    int max = 0;
+    for (int i = 0; i < max_items; ++i) {
+        GridPosition p = tm.grid[i];
+        if (p.x < min) min = p.x;
+        if (p.x > max) max = p.x;
+    }
+    return max-min;
+}
 
 bool is_empty(GridPosition p) {
     for (int id = 0; id < tm.n_items; ++id) {
@@ -169,7 +190,7 @@ bool move(int id, Move m, GridPosition from) {
     }
 
     tm.grid[id] = p;
-    tm.transforms[id].t = {(float)p.x, (float)p.y};
+    tm.transforms[id].t = {(float)tile_size * p.x, (float)tile_size * p.y};
 
     return true;
 }
@@ -214,6 +235,44 @@ void add_player() {
     int id = tm.add_grid_entity(PLAYER, 0, 0);
     player_id = id;
     tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
+}
+
+void place_item(ItemType type) {
+    int cols = count_cols();
+    float ratio = gfx_width() / tile_size;
+    int x = editor.mouse.x * ratio;
+    int y = editor.mouse.y * ratio;
+
+    if (at(type, {x, y}).valid) return;
+    if (type == PLAYER) {
+        if (at(WALL, {x, y}).valid) return;
+        if (at(BLOCK, {x, y}).valid) return;
+    }
+    if (type == WALL || type == BLOCK) {
+        if (at(PLAYER, {x, y}).valid) return;
+    }
+    tm.add_grid_entity(type, x, y);
+}
+
+void remove_item() {
+    int cols = count_cols();
+    float ratio = gfx_width() / tile_size;
+    int x = editor.mouse.x * ratio;
+    int y = editor.mouse.y * ratio;
+    if (MaybeId wall = at(WALL, {x, y}); wall.valid) {
+        tm.remove(wall.id);
+        return;
+    }
+
+    if (MaybeId block = at(BLOCK, {x, y}); block.valid) {
+        tm.remove(block.id);
+        return;
+    }
+
+    if (MaybeId floor = at(FLOOR, {x, y}); floor.valid) {
+        tm.remove(floor.id);
+        return;
+    }
 }
 
 void portal2d_init() {
@@ -267,7 +326,33 @@ void portal2d_key_input(int action, int key) {
             case GLFW_KEY_RIGHT: move_player({1, 0}); break;
             case GLFW_KEY_ENTER: editor_mode = !editor_mode; break;
         }
+
+        if (editor_mode) {
+            switch (key) {
+                case GLFW_KEY_1: place_item(FLOOR); break;
+                case GLFW_KEY_2: place_item(WALL); break;
+                case GLFW_KEY_3: place_item(BLOCK); break;
+                case GLFW_KEY_X: remove_item(); break;
+            }
+        }
     }
+}
+
+void portal2d_mouse_cursor_position(float xpos, float ypos) {
+    if (editor_mode) {
+        editor.mouse.x = xpos;
+        editor.mouse.y = ypos;
+    }
+}
+
+void portal2d_mouse_button(int button, int action) {
+    if (!editor_mode) return;
+
+    // if (action == GLFW_PRESS) {
+    //     if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    //         place_item();
+    //     }
+    // }
 }
 
 void portal2d_update(float dt) {
@@ -275,11 +360,51 @@ void portal2d_update(float dt) {
 }
 
 void portal2d_draw() {
-    Affine view_transform = from_scale(tile_size);
-    for (int id = 0; id < tm.n_items; ++id) {
+    int ordered_ids[max_items];
+    {
+        int i = 0;
+        for (int id = 0; id < tm.n_items; ++id) {
+            if (tm.types[id] == FLOOR) {
+                ordered_ids[i++] = id;
+            }
+        }
+
+        for (int id = 0; id < tm.n_items; ++id) {
+            if (tm.types[id] != FLOOR) {
+                ordered_ids[i++] = id;
+            }
+        }
+    }
+
+    // Affine view_transform = from_scale(tile_size);
+    for (int i = 0; i < tm.n_items; ++i) {
+        int id = ordered_ids[i];
         auto type = tm.types[id];
-        auto view_model = mul(view_transform, tm.transforms[id]);
+        if (type == EMPTY) continue;
+
+        auto view_model = mul(affine_eye(), tm.transforms[id]);
         gfx_draw_sprite(tm.sprites[type], view_model, false);
+
+        if (type == WALL) {
+            const RGBA tunnel_colors[] = {
+                rgba_from_hex(0xff595e),
+                rgba_from_hex(0xffca3a),
+                rgba_from_hex(0x8ac926),
+            };
+
+            if (int tid = tm.portals[id].tunnel[0]; tid >= 0) {
+                gfx_draw_line(multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}), tunnel_colors[tid], 3);
+            }
+            if (int tid = tm.portals[id].tunnel[1]; tid >= 0) {
+                gfx_draw_line(multiply_affine_vec2(view_model, {1, 0}), multiply_affine_vec2(view_model, {1, 1}), tunnel_colors[tid], 3);
+            }
+            if (int tid = tm.portals[id].tunnel[2]; tid >= 0) {
+                gfx_draw_line(multiply_affine_vec2(view_model, {1, 1}), multiply_affine_vec2(view_model, {0, 1}), tunnel_colors[tid], 3);
+            }
+            if (int tid = tm.portals[id].tunnel[3]; tid >= 0) {
+                gfx_draw_line(multiply_affine_vec2(view_model, {0, 1}), multiply_affine_vec2(view_model, {0, 0}), tunnel_colors[tid], 3);
+            }
+        }
     }
 
     if (editor_mode) {

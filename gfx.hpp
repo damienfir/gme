@@ -2,6 +2,7 @@
 #define GFX_HPP
 
 #include "math.hpp"
+#include <stdio.h>
 
 struct RGBA {
     float r = 0;
@@ -35,6 +36,12 @@ inline RGBA clamp01(RGBA a) {
     return b;
 }
 
+inline RGBA rgba_from_hex(int hex) {
+    int r = (hex >> 16) & 0xff;
+    int g = (hex >> 8) & 0xff;
+    int b = hex & 0xff;
+    return {r/255.f, g/255.f, b/255.f, 1.f};
+}
 
 struct Sprite {
     int w;

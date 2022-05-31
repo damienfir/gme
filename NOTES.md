@@ -5,3 +5,11 @@ Plan: make it easier to prototype and try 2d puzzle games
 Experiment:
 
 - layered (jam) coding style, layer by layer, change one layer at a time, introduce new ideas in each new layer
+
+
+Next:
+- make editor
+- undo
+
+Done:
+- draw portals

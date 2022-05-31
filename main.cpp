@@ -1,10 +1,7 @@
 #include <GLFW/glfw3.h>
 #include <GL/glu.h>
-#include <iostream>
-#include <bitset>
-#include <thread>
-#include <vector>
 #include <chrono>
+#include <cstdlib>
 
 #include "gfx.hpp"
 #include "portal2d.hpp"
@@ -26,14 +23,14 @@ struct Timer {
         return ms/1000.f;
     }
 
-    void sync(int ms) {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto elapsed = now - previous_timestamp;
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
-        }
-        previous_timestamp = now;
-    }
+//     void sync(int ms) {
+//         auto now = std::chrono::high_resolution_clock::now();
+//         auto elapsed = now - previous_timestamp;
+//         if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
+//             std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
+//         }
+//         previous_timestamp = now;
+//     }
 };
 
 
@@ -131,10 +128,18 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     portal2d_key_input(action, key);
 }
 
+const int window_width = 1024;
+const int window_height = 1024;
 
 static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     // state.controls.mouse.x = xpos;
     // state.controls.mouse.y = ypos;
+
+    portal2d_mouse_cursor_position(xpos/window_width, ypos/window_height);
+}
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    portal2d_mouse_button(button, action);
 }
 
 
@@ -146,8 +151,6 @@ int main(int argc, char** argv) {
         abort();
     }
 
-    const int window_width = 1024;
-    const int window_height = 1024;
     GLFWwindow * window = glfwCreateWindow(window_width, window_height, "Awesome game", NULL, NULL);
     if (!window) {
         printf("Cannot open window\n");
@@ -161,6 +164,7 @@ int main(int argc, char** argv) {
     
     glfwSetKeyCallback(window, key_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
 
     init_texture();
     portal2d_init();
@@ -171,8 +175,8 @@ int main(int argc, char** argv) {
             // joystick_control(GLFW_JOYSTICK_1);
         // }
 
-        float dt = timer_dt.tick();
-        printf("fps: %.2f\n", 1/dt);
+        // float dt = timer_dt.tick();
+        // printf("fps: %.2f\n", 1/dt);
         // update(dt);
 
         // terrain_draw();
