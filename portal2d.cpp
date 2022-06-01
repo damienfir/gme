@@ -9,7 +9,6 @@
 enum ItemType {
     EMPTY,
     FLOOR,
-    WALL,
     BLOCK,
     PLAYER,
 };
@@ -175,10 +174,6 @@ bool move(int id, Move m, GridPosition from) {
         return false;
     }
 
-    if (auto wall = at(WALL, p); wall.valid) {
-        return false;
-    }
-
     if (auto block = at(BLOCK, p); block.valid) {
         auto face = move_to_face(m);
         auto tunnel_id = tm.portals[block.id].tunnel[face];
@@ -283,11 +278,6 @@ void editor_place_item(ItemType type) {
 
 void editor_remove_item() {
     GridPosition p = editor_mouse_position();
-    if (MaybeId wall = at(WALL, p); wall.valid) {
-        tm.remove(wall.id);
-        return;
-    }
-
     if (MaybeId block = at(BLOCK, p); block.valid) {
         tm.remove(block.id);
         return;
@@ -377,12 +367,6 @@ void portal2d_init() {
     };
     tm.sprites[FLOOR].data = floor_c;
 
-    tm.sprites[WALL].w = 1;
-    tm.sprites[WALL].h = 1;
-    static RGBA wall_c[] = {
-        {0.8, 0.8, 0.8, 1},
-    };
-    tm.sprites[WALL].data = wall_c;
 
     tm.sprites[BLOCK].w = 1;
     tm.sprites[BLOCK].h = 1;
@@ -412,7 +396,6 @@ void portal2d_key_input(int action, int key) {
                 case GLFW_KEY_3: editor_set_portal(2); break;
 
                 case GLFW_KEY_F: editor_place_item(FLOOR); break;
-                case GLFW_KEY_W: editor_place_item(WALL); break;
                 case GLFW_KEY_B: editor_place_item(BLOCK); break;
                 case GLFW_KEY_X: editor_remove_item(); break;
             }
