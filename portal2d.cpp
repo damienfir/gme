@@ -1,11 +1,10 @@
-#include <stdio.h>
 #include <GLFW/glfw3.h>
+#include <stdio.h>
 
-#include "math.hpp"
 #include "gfx.hpp"
-#include "utility.hpp"
 #include "image.hpp"
-
+#include "math.hpp"
+#include "utility.hpp"
 
 enum ItemType {
     EMPTY,
@@ -14,7 +13,6 @@ enum ItemType {
     BLOCK,
     PLAYER,
 };
-
 
 struct GridPosition {
     int x;
@@ -29,6 +27,10 @@ struct Move {
     int x;
     int y;
 };
+
+bool operator==(Move a, Move b) {
+    return a.x == b.x && a.y == b.y;
+}
 
 struct MaybeId {
     int id;
@@ -45,15 +47,14 @@ const float tile_sizef = 100;
 
 int move_to_face(Move m) {
     assert(m.x != 0 || m.y != 0);
-    if (m.x > 0) {
+    if (m.x > 0)
         return 3;
-    } else if (m.x < 0) {
+    else if (m.x < 0)
         return 1;
-    } else if (m.y > 0) {
+    else if (m.y > 0)
         return 0;
-    } else if (m.y < 0) {
+    else if (m.y < 0)
         return 2;
-    }
 }
 
 Move face_to_move(int face) {
@@ -73,12 +74,12 @@ struct Tilemap {
     Sprite sprites[20];
     Affine transforms[max_items];
 
-    int n_items = 0;
+    int max_id = 0;
 
     int new_id() {
-        n_items++;
-        assert(n_items < max_items);
-        return n_items-1;
+        max_id++;
+        assert(max_id < max_items);
+        return max_id - 1;
     }
 
     int add_grid_entity(ItemType type, int x, int y) {
@@ -89,9 +90,7 @@ struct Tilemap {
         return id;
     }
 
-    void remove(int id) {
-        types[id] = EMPTY;
-    }
+    void remove(int id) { types[id] = EMPTY; }
 };
 
 struct Editor {
@@ -101,26 +100,13 @@ struct Editor {
 
 Tilemap tm;
 int player_id;
-bool editor_mode = false;
+bool editor_mode = true;
 Editor editor;
 
-int count_cols() {
-    int min = 10000000;
-    int max = 0;
-    for (int i = 0; i < max_items; ++i) {
-        GridPosition p = tm.grid[i];
-        if (p.x < min) min = p.x;
-        if (p.x > max) max = p.x;
-    }
-    return max-min;
-}
-
 bool is_empty(GridPosition p) {
-    for (int id = 0; id < tm.n_items; ++id) {
+    for (int id = 0; id < tm.max_id; ++id) {
         if (p == tm.grid[id]) {
-            if (tm.types[id] == EMPTY) {
-                return true;
-            } else {
+            if (tm.types[id] != EMPTY) {
                 return false;
             }
         }
@@ -130,7 +116,7 @@ bool is_empty(GridPosition p) {
 }
 
 MaybeId at(ItemType type, GridPosition p) {
-    for (int id = 0; id < tm.n_items; ++id) {
+    for (int id = 0; id < tm.max_id; ++id) {
         if (p == tm.grid[id]) {
             if (tm.types[id] == type) {
                 return {.id = id, .valid = true};
@@ -142,9 +128,9 @@ MaybeId at(ItemType type, GridPosition p) {
 }
 
 MaybeId item_at(GridPosition p) {
-    for (int id = 0; id < tm.n_items; ++id) {
+    for (int id = 0; id < tm.max_id; ++id) {
         if (p == tm.grid[id]) {
-            if (tm.types[id] != FLOOR) {
+            if (tm.types[id] != FLOOR && tm.types[id] != EMPTY) {
                 return {.id = id, .valid = true};
             }
         }
@@ -163,7 +149,8 @@ PortalFace find_exit_face(PortalFace from) {
     for (int item_id = 0; item_id < max_items; ++item_id) {
         if (tm.types[item_id] == BLOCK) {
             for (int other_face = 0; other_face < 4; ++other_face) {
-                if (item_id == from.item_id and other_face == from.face) continue;
+                if (item_id == from.item_id and other_face == from.face)
+                    continue;
                 if (tm.portals[item_id].tunnel[other_face] == tunnel_id) {
                     return {.item_id = item_id, .face = other_face};
                 }
@@ -200,9 +187,25 @@ bool move(int id, Move m, GridPosition from) {
 
             auto other_portal = find_exit_face({.item_id = block.id, .face = face});
             Move next_move = face_to_move(other_portal.face);
+
+            // Don't return if false
             if (move(id, next_move, tm.grid[other_portal.item_id])) {
+                
+                Move rotated = m;
+                auto tunnels = tm.portals[id].tunnel;
+                for (int r = 0; r < 4; ++r) {
+                    if (rotated == next_move) {
+                        break;
+                    }
+                    rotated = {.x = -rotated.y, .y = rotated.x};
+                    
+                    int t0 = tunnels[0];
+                    tunnels[0] = tunnels[3];
+                    tunnels[3] = tunnels[2];
+                    tunnels[2] = tunnels[1];
+                    tunnels[1] = t0;
+                }
                 return true;
-                // Don't return if false
             }
         }
         if (!move(block.id, m, tm.grid[block.id])) {
@@ -230,15 +233,15 @@ Sprite sprite_from_png(PngImage im, Crop roi) {
     Sprite s;
     s.w = roi.w;
     s.h = roi.h;
-    s.data = (RGBA*)malloc(s.w*s.h*sizeof(RGBA));
+    s.data = (RGBA*)malloc(s.w * s.h * sizeof(RGBA));
 
-    for (int crop_y = roi.y; crop_y < roi.y + roi.w; ++crop_y) 
+    for (int crop_y = roi.y; crop_y < roi.y + roi.w; ++crop_y)
         for (int crop_x = roi.x; crop_x < roi.x + roi.w; ++crop_x) {
             RGBA c;
-            c.r = im.data[crop_y * im.width * 4 + crop_x*4 + 0];
-            c.g = im.data[crop_y * im.width * 4 + crop_x*4 + 1];
-            c.b = im.data[crop_y * im.width * 4 + crop_x*4 + 2];
-            c.a = im.data[crop_y * im.width * 4 + crop_x*4 + 3];
+            c.r = im.data[crop_y * im.width * 4 + crop_x * 4 + 0];
+            c.g = im.data[crop_y * im.width * 4 + crop_x * 4 + 1];
+            c.b = im.data[crop_y * im.width * 4 + crop_x * 4 + 2];
+            c.a = im.data[crop_y * im.width * 4 + crop_x * 4 + 3];
             int sprite_x = crop_x - roi.x;
             int sprite_y = crop_y - roi.y;
             s.data[sprite_y * roi.w + sprite_x] = c;
@@ -264,17 +267,17 @@ GridPosition editor_mouse_position() {
     return {x, y};
 }
 
+bool can_place_here(ItemType type, GridPosition p) {
+    if (is_empty(p) and type != FLOOR)
+        return false;
+    return true;
+}
+
 void editor_place_item(ItemType type) {
     GridPosition p = editor_mouse_position();
 
-    if (at(type, p).valid) return;
-    if (type == PLAYER) {
-        if (at(WALL, p).valid) return;
-        if (at(BLOCK, p).valid) return;
-    }
-    if (type == WALL || type == BLOCK) {
-        if (at(PLAYER, p).valid) return;
-    }
+    if (!can_place_here(type, p))
+        return;
     tm.add_grid_entity(type, p.x, p.y);
 }
 
@@ -298,19 +301,23 @@ void editor_remove_item() {
 
 void editor_start_dragging() {
     GridPosition p = editor_mouse_position();
-    if(MaybeId item = item_at(p); item.valid) {
+    if (MaybeId item = item_at(p); item.valid) {
         editor.selected = item.id;
     }
 }
 
-void editor_stop_dragging() {
-    if (editor.selected < 0) return;
+void editor_while_dragging() {
+    if (editor.selected < 0)
+        return;
 
     GridPosition p = editor_mouse_position();
-    if (!item_at(p).valid) {
-        set_item_position(editor.selected, p);
-        editor.selected = -1;
-    }
+    if (!can_place_here(tm.types[editor.selected], p))
+        return;
+    set_item_position(editor.selected, p);
+}
+
+void editor_stop_dragging() {
+    editor.selected = -1;
 }
 
 int editor_selected_face() {
@@ -322,15 +329,19 @@ int editor_selected_face() {
     bool bottomleft = x < y;
     bool topleft = 1 - y > x;
 
-    if (topleft && !bottomleft) return 0;
-    if (!topleft && !bottomleft) return 1;
-    if (!topleft && bottomleft) return 2;
-    if (topleft && bottomleft) return 3;
+    if (topleft && !bottomleft)
+        return 0;
+    if (!topleft && !bottomleft)
+        return 1;
+    if (!topleft && bottomleft)
+        return 2;
+    if (topleft && bottomleft)
+        return 3;
 }
 
 void editor_set_portal(int tunnel_id) {
     GridPosition p = editor_mouse_position();
-    
+
     if (MaybeId item = item_at(p); item.valid) {
         if (tm.types[item.id] == BLOCK) {
             int face = editor_selected_face();
@@ -352,7 +363,7 @@ void portal2d_init() {
     // int block1 = tm.add_grid_entity(BLOCK, 3, 1);
     // tm.portals[block1].tunnel[1] = 1;
     // tm.portals[block1].tunnel[2] = 1;
-    
+
     // int block2 = tm.add_grid_entity(BLOCK, 4, 2);
     // tm.portals[block2].tunnel[0] = 0;
     // tm.portals[block2].tunnel[3] = 0;
@@ -413,11 +424,13 @@ void portal2d_mouse_cursor_position(float xpos, float ypos) {
     if (editor_mode) {
         editor.mouse.x = xpos;
         editor.mouse.y = ypos;
+        editor_while_dragging();
     }
 }
 
 void portal2d_mouse_button(int button, int action) {
-    if (!editor_mode) return;
+    if (!editor_mode)
+        return;
 
     if (action == GLFW_PRESS) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -435,27 +448,26 @@ void portal2d_update(float dt) {
 }
 
 void portal2d_draw() {
+    int n_ids = 0;
     int ordered_ids[max_items];
-    {
-        int i = 0;
-        for (int id = 0; id < tm.n_items; ++id) {
-            if (tm.types[id] == FLOOR) {
-                ordered_ids[i++] = id;
-            }
+    for (int id = 0; id < tm.max_id; ++id) {
+        if (tm.types[id] == FLOOR) {
+            ordered_ids[n_ids++] = id;
         }
+    }
 
-        for (int id = 0; id < tm.n_items; ++id) {
-            if (tm.types[id] != FLOOR) {
-                ordered_ids[i++] = id;
-            }
+    for (int id = 0; id < tm.max_id; ++id) {
+        if (tm.types[id] != FLOOR && tm.types[id] != EMPTY) {
+            ordered_ids[n_ids++] = id;
         }
     }
 
     // Affine view_transform = from_scale(tile_size);
-    for (int i = 0; i < tm.n_items; ++i) {
+    for (int i = 0; i < n_ids; ++i) {
         int id = ordered_ids[i];
         auto type = tm.types[id];
-        if (type == EMPTY) continue;
+        if (type == EMPTY)
+            continue;
 
         auto view_model = mul(affine_eye(), tm.transforms[id]);
         gfx_draw_sprite(tm.sprites[type], view_model, false);
@@ -468,16 +480,20 @@ void portal2d_draw() {
             };
 
             if (int tid = tm.portals[id].tunnel[0]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}), tunnel_colors[tid], 3);
+                gfx_draw_line(multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}),
+                              tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[1]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {1, 0}), multiply_affine_vec2(view_model, {1, 1}), tunnel_colors[tid], 3);
+                gfx_draw_line(multiply_affine_vec2(view_model, {1, 0}), multiply_affine_vec2(view_model, {1, 1}),
+                              tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[2]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {1, 1}), multiply_affine_vec2(view_model, {0, 1}), tunnel_colors[tid], 3);
+                gfx_draw_line(multiply_affine_vec2(view_model, {1, 1}), multiply_affine_vec2(view_model, {0, 1}),
+                              tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[3]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {0, 1}), multiply_affine_vec2(view_model, {0, 0}), tunnel_colors[tid], 3);
+                gfx_draw_line(multiply_affine_vec2(view_model, {0, 1}), multiply_affine_vec2(view_model, {0, 0}),
+                              tunnel_colors[tid], 3);
             }
         }
     }

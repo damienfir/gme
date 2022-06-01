@@ -64,9 +64,10 @@ Only blocks have portals. Then they can be rotated and used to limit how the pla
 
 Player can place one portal on the wall so that he can push the block from the other portal.
 
-Block pushed against another block can make the other block go through the portal ? Might be too complicated to understand or to use.
-
 Player tunnels recursively and can use that to access difficult spaces.
+
+Player has to put a block on a final tile.
+- Only a specific block, or any block ?
 
 
 # Implementation
