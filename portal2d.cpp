@@ -11,6 +11,7 @@ enum ItemType {
     FLOOR,
     BLOCK,
     PLAYER,
+    BUTTON,
 };
 
 struct GridPosition {
@@ -72,6 +73,7 @@ struct Tilemap {
     Portals portals[max_items];
     Sprite sprites[20];
     Affine transforms[max_items];
+    int buttons[max_items];  // Stores the controlled tunnel_id
 
     int max_id = 0;
 
@@ -165,6 +167,18 @@ void set_item_position(int id, GridPosition p) {
     tm.transforms[id].t = {(float)tile_size * p.x, (float)tile_size * p.y};
 }
 
+bool is_activated(int tunnel_id) {
+    for (int id = 0; id < tm.max_id; ++id) {
+        if (tm.types[id] == BUTTON && tm.buttons[id] == tunnel_id) {
+            auto p = tm.grid[id];
+            if (tm.grid[player_id] == p || at(BLOCK, p).valid) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool move(int id, Move m, GridPosition from) {
     GridPosition p;
     p.x = from.x + m.x;
@@ -177,7 +191,7 @@ bool move(int id, Move m, GridPosition from) {
     if (auto block = at(BLOCK, p); block.valid) {
         auto face = move_to_face(m);
         auto tunnel_id = tm.portals[block.id].tunnel[face];
-        if (tunnel_id >= 0) {
+        if (tunnel_id >= 0 && is_activated(tunnel_id)) {
             printf("teleport through tunnel %d\n", tunnel_id);
 
             auto other_portal = find_exit_face({.item_id = block.id, .face = face});
@@ -185,7 +199,6 @@ bool move(int id, Move m, GridPosition from) {
 
             // Don't return if false
             if (move(id, next_move, tm.grid[other_portal.item_id])) {
-                
                 Move rotated = m;
                 auto tunnels = tm.portals[id].tunnel;
                 for (int r = 0; r < 4; ++r) {
@@ -193,7 +206,7 @@ bool move(int id, Move m, GridPosition from) {
                         break;
                     }
                     rotated = {.x = -rotated.y, .y = rotated.x};
-                    
+
                     int t0 = tunnels[0];
                     tunnels[0] = tunnels[3];
                     tunnels[3] = tunnels[2];
@@ -278,7 +291,7 @@ void editor_place_item(ItemType type) {
 
 void editor_remove_item() {
     GridPosition p = editor_mouse_position();
-    if (MaybeId block = at(BLOCK, p); block.valid) {
+    if (MaybeId block = item_at(p); block.valid) {
         tm.remove(block.id);
         return;
     }
@@ -337,6 +350,8 @@ void editor_set_portal(int tunnel_id) {
             int face = editor_selected_face();
             printf("adding to face: %d\n", face);
             tm.portals[item.id].tunnel[face] = tunnel_id;
+        } else if (tm.types[item.id] == BUTTON) {
+            tm.buttons[item.id] = tunnel_id;
         }
     }
 }
@@ -358,22 +373,31 @@ void portal2d_init() {
     // tm.portals[block2].tunnel[0] = 0;
     // tm.portals[block2].tunnel[3] = 0;
 
+    int button1 = tm.add_grid_entity(BUTTON, 3, 3);
+    tm.buttons[button1] = 0;
+
     add_player();
 
     tm.sprites[FLOOR].w = 1;
     tm.sprites[FLOOR].h = 1;
     static RGBA floor_c[] = {
-        {0.5, 0.5, 0.5, 1},
+        {0.6, 0.6, 0.6, 1},
     };
     tm.sprites[FLOOR].data = floor_c;
-
 
     tm.sprites[BLOCK].w = 1;
     tm.sprites[BLOCK].h = 1;
     static RGBA block_c[] = {
-        {0.2, 0.2, 0.2, 1},
+        {0.4, 0.4, 0.4, 1},
     };
     tm.sprites[BLOCK].data = block_c;
+
+    tm.sprites[BUTTON].w = 1;
+    tm.sprites[BUTTON].h = 1;
+    static RGBA button_c[] = {
+        {1, 1, 1, 1},
+    };
+    tm.sprites[BUTTON].data = button_c;
 
     tm.sprites[PLAYER] = load_player_sprite();
 }
@@ -397,6 +421,7 @@ void portal2d_key_input(int action, int key) {
 
                 case GLFW_KEY_F: editor_place_item(FLOOR); break;
                 case GLFW_KEY_B: editor_place_item(BLOCK); break;
+                case GLFW_KEY_P: editor_place_item(BUTTON); break;
                 case GLFW_KEY_X: editor_remove_item(); break;
             }
         }
@@ -445,6 +470,12 @@ void portal2d_draw() {
         }
     }
 
+    const RGBA tunnel_colors[] = {
+        rgba_from_hex(0xff595e),
+        rgba_from_hex(0xffca3a),
+        rgba_from_hex(0x8ac926),
+    };
+
     // Affine view_transform = from_scale(tile_size);
     for (int i = 0; i < n_ids; ++i) {
         int id = ordered_ids[i];
@@ -452,16 +483,17 @@ void portal2d_draw() {
         if (type == EMPTY)
             continue;
 
-        auto view_model = mul(affine_eye(), tm.transforms[id]);
+        auto model_transform = tm.transforms[id];
+
+        if (type == BUTTON) {
+            tm.sprites[BUTTON].data[0] = tunnel_colors[tm.buttons[id]];
+            model_transform = multiply_affine(model_transform, from_scale(0.5));
+        }
+
+        auto view_model = mul(affine_eye(), model_transform);
         gfx_draw_sprite(tm.sprites[type], view_model, false);
 
         if (type == BLOCK) {
-            const RGBA tunnel_colors[] = {
-                rgba_from_hex(0xff595e),
-                rgba_from_hex(0xffca3a),
-                rgba_from_hex(0x8ac926),
-            };
-
             if (int tid = tm.portals[id].tunnel[0]; tid >= 0) {
                 gfx_draw_line(multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}),
                               tunnel_colors[tid], 3);
