@@ -56,8 +56,12 @@ inline Vec2 operator*(float d, Vec2 v) {
     return v * d;
 }
 
-inline float norm(Vec2 v) {
+inline float vec2_norm(Vec2 v) {
     return sqrt(v.x*v.x + v.y*v.y);
+}
+
+inline float norm(Vec2 v) {
+    return vec2_norm(v);
 }
 
 inline Vec2 normalize(Vec2 v) {

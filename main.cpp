@@ -4,7 +4,8 @@
 #include <cstdlib>
 
 #include "gfx.hpp"
-#include "portal2d.hpp"
+// #include "portal2d.hpp"
+#include "world.hpp"
 
 struct Timer {
     std::chrono::time_point<std::chrono::high_resolution_clock> previous_timestamp;
@@ -125,7 +126,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     //     }
     }
 
-    portal2d_key_input(action, key);
+    world_key_input(action, key);
 }
 
 const int window_width = 1024;
@@ -135,11 +136,11 @@ static void cursor_position_callback(GLFWwindow* window, double xpos, double ypo
     // state.controls.mouse.x = xpos;
     // state.controls.mouse.y = ypos;
 
-    portal2d_mouse_cursor_position(xpos/window_width, ypos/window_height);
+    world_mouse_cursor_position(xpos/window_width, ypos/window_height);
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
-    portal2d_mouse_button(button, action);
+    world_mouse_button(button, action);
 }
 
 
@@ -167,7 +168,7 @@ int main(int argc, char** argv) {
     glfwSetMouseButtonCallback(window, mouse_button_callback);
 
     init_texture();
-    portal2d_init();
+    world_init();
     
     while (running) {
         // if (glfwJoystickIsGamepad(GLFW_JOYSTICK_1)) {
@@ -175,13 +176,13 @@ int main(int argc, char** argv) {
             // joystick_control(GLFW_JOYSTICK_1);
         // }
 
-        // float dt = timer_dt.tick();
+        float dt = timer_dt.tick();
         // printf("fps: %.2f\n", 1/dt);
-        // update(dt);
+        world_update(dt);
 
         // terrain_draw();
         gfx_clear_solid({});
-        portal2d_draw();
+        world_draw();
         draw_texture();
 
         glfwSwapBuffers(window);
