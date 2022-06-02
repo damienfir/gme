@@ -59,8 +59,8 @@ void init_texture() {
 
     // int w = state.camera.res_x;
     // int h = state.camera.res_y;
-    int w = 1024;
-    int h = 1024;
+    int w = 512;
+    int h = 512;
     tex.buffer = {
         .w = w,
         .h = h,
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
         // }
 
         float dt = timer_dt.tick();
-        // printf("fps: %.2f\n", 1/dt);
+        printf("fps: %.2f\n", 1/dt);
         world_update(dt);
 
         // terrain_draw();

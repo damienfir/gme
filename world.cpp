@@ -8,14 +8,12 @@
 
 struct Camera {
     Vec2 position;  // offset from game grid top-left (0,0)
-    float size_x;  // size on game grid
+    float size_x;   // size on game grid
     float size_y;
     int res_x;  // texture resolution
     int res_y;
 
-    float to_viewport(float a) {
-        return a * res_x / size_x;
-    }
+    float to_viewport(float a) { return a * res_x / size_x; }
 
     Affine view_transform() {
         Affine translation = from_translation(-position);
@@ -41,8 +39,26 @@ struct Controls {
     bool down = false;
 };
 
+enum GroundType {
+    GRASS,
+    DIRT,
+};
+
+struct GroundSample {
+    GroundType type;
+    Vec2 p;
+};
+
+struct Texture {
+    RGBA data[100];
+};
+
 const int max_items = 1024;
 
+int world_x = 1000;
+int world_y = 1000;
+int n_ground_sample = 0;
+GroundSample ground_sample[128];
 Vec2 position[max_items];
 Vec2 velocity[max_items];
 Shape shape[max_items];
@@ -53,6 +69,32 @@ unsigned long time_ms;
 float time_scaling = 1;
 float ms_accumulated;
 Camera camera;
+Image texture[10];
+Image ground;
+
+Image texture_grass_create() {
+    Image t = image_create(10, 10);
+
+    for (int i = 0; i < 100; ++i) {
+        RGBA c = rgba_from_hex(0x7cb518);
+        RGBA noise = randf() * 0.05 * RGBA{1, 1, 1, 1};
+        t.data[i] = c + noise;
+    }
+
+    return t;
+}
+
+Image texture_dirt_create() {
+    Image t = image_create(10, 10);
+
+    for (int i = 0; i < 100; ++i) {
+        RGBA c = rgba_from_hex(0x6c584c);
+        RGBA noise = randf() * 0.05 * RGBA{1, 1, 1, 1};
+        t.data[i] = c + noise;
+    }
+
+    return t;
+}
 
 int new_id() {
     assert(n_ids < max_items);
@@ -74,6 +116,42 @@ int add_tree(Vec2 p) {
     return id;
 }
 
+RGBA texture_sample(Image* t, Vec2 p) {
+    int x = (int)p.x % 10;
+    int y = (int)p.y % 10;
+    return t->data[y * 10 + x];
+}
+
+void render_ground() {
+    float max_distance = sqrt(world_x * world_y);
+    for (int y = 0; y < world_y; ++y)
+        for (int x = 0; x < world_x; ++x) {
+            Vec2 p = {(float)x, (float)y};
+
+            float weights = 0;
+            RGBA c;
+            for (int i = 0; i < n_ground_sample; ++i) {
+                GroundSample g = ground_sample[i];
+                float distance = vec2_norm(p - g.p);
+                RGBA sample = texture_sample(&texture[g.type], {(float)x, (float)y});
+                if (distance == 0) {
+                    c = sample;
+                    weights = 0;
+                    break;
+                } else {
+                    float w = 1.f / powf(distance / max_distance, 8);
+                    weights += w;
+                    c = c + w * sample;
+                }
+            }
+            if (weights > 0) {
+                c = c / weights;
+            }
+
+            ground.data[y*ground.w + x] = c;
+        }
+}
+
 void world_init() {
     int player_id = add_player();
     controlling = player_id;
@@ -83,8 +161,19 @@ void world_init() {
     camera.position = {0, 0};
     camera.size_x = 100;
     camera.size_y = 100;
-    camera.res_x = 1024;
-    camera.res_y = 1024;
+    camera.res_x = 512;
+    camera.res_y = 512;
+
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {50, 50}};
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {40, 60}};
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {30, 70}};
+    ground_sample[n_ground_sample++] = {.type = DIRT, .p = {180, 180}};
+
+    texture[GRASS] = texture_grass_create();
+    texture[DIRT] = texture_dirt_create();
+
+    ground = image_create(world_x, world_y);
+    render_ground();
 }
 
 void resolve_collision(int a, int b) {
@@ -94,7 +183,6 @@ void resolve_collision(int a, int b) {
     if (actual_distance < min_distance) {
         float d = min_distance - actual_distance;
         if (!is_zero(velocity[a])) {
-            printf("move a: %.2f\n", d);
             position[a] = position[a] - d * ab;
         } else {
             position[b] = position[b] + d * ab;
@@ -108,10 +196,11 @@ void world_update(float dt) {
     time_ms += dt * 1000;
     ms_accumulated += dt * 1000;
     if (ms_accumulated > 1000) {
+        // printf("seconds: %d\n", time_ms / 1000);
         ms_accumulated = 0;
     }
 
-    const float speed = 10;
+    const float speed = 30;
     Vec2 vel;
 
     if (controls.left) {
@@ -142,15 +231,18 @@ void world_update(float dt) {
             resolve_collision(id_a, id_b);
         }
     }
+
+    camera.position = position[controlling] - Vec2{camera.size_x/2, camera.size_y/2};
 }
 
 void world_draw() {
-    Affine view_transform = camera.view_transform();
+    Affine t = camera.view_transform();
+    gfx_draw_sprite(&ground, t, false);
+
     for (int id = 0; id < n_ids; ++id) {
         Shape s = shape[id];
         switch (s.type) {
-            case CIRCLE:
-                gfx_draw_point(multiply_affine_vec2(view_transform, position[id]), s.color, camera.to_viewport(s.radius));
+            case CIRCLE: gfx_draw_point(multiply_affine_vec2(t, position[id]), s.color, camera.to_viewport(s.radius));
         }
     }
 }
@@ -177,4 +269,3 @@ void world_key_input(int action, int key) {
 void world_mouse_cursor_position(float xpos, float ypos) {}
 
 void world_mouse_button(int button, int action) {}
-

@@ -18,4 +18,8 @@ inline void print_rgba(const char* name, RGBA c) {
     printf("%s: %.2f, %.2f, %.2f, %.2f\n", name, c.r, c.g, c.b, c.a);
 }
 
+inline float randf() {
+    return (float)rand() / (float)RAND_MAX;
+}
+
 #endif /* UTIL_HPP */
