@@ -45,6 +45,10 @@ inline RGBA operator+(RGBA a, RGBA b) {
     return RGBA{a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a};
 }
 
+inline RGBA rgba_add(RGBA a, RGBA b) {
+    return RGBA{a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a};
+}
+
 inline RGBA& operator+=(RGBA& a, RGBA b) {
     a.r += b.r;
     a.g += b.g;
@@ -53,13 +57,17 @@ inline RGBA& operator+=(RGBA& a, RGBA b) {
     return a;
 }
 
-inline RGBA clamp01(RGBA a) {
+inline RGBA rgba_clamp(RGBA a) {
     RGBA b;
-    b.r = fmin(1.f, fmax(0.f, a.r));
-    b.g = fmin(1.f, fmax(0.f, a.g));
-    b.b = fmin(1.f, fmax(0.f, a.b));
-    b.a = fmin(1.f, fmax(0.f, a.a));
+    b.r = fminf(1, fmaxf(0, a.r));
+    b.g = fminf(1, fmaxf(0, a.g));
+    b.b = fminf(1, fmaxf(0, a.b));
+    b.a = fminf(1, fmaxf(0, a.a));
     return b;
+}
+
+inline RGBA clamp01(RGBA a) {
+    return rgba_clamp(a);
 }
 
 inline RGBA rgba_from_hex(int hex) {

@@ -37,6 +37,7 @@ struct Controls {
     bool right = false;
     bool up = false;
     bool down = false;
+    Vec2 mouse;
 };
 
 enum GroundType {
@@ -55,6 +56,10 @@ struct Texture {
 
 struct Sun {
     float angle;
+};
+
+struct Torch {
+    Vec2 direction;
 };
 
 const int max_items = 1024;
@@ -77,6 +82,7 @@ Camera camera;
 Image texture[10];
 Image ground;
 Sun sun;
+Torch torch;
 
 float get_time_of_day() {
     int ms_in_hour = 3600 * 1000;
@@ -95,6 +101,7 @@ void sun_update_angle() {
 }
 
 RGB kelvin_to_color(float t) {
+    // Code from https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html
     t /= 100;
 
     float red = 255;
@@ -308,8 +315,25 @@ void world_update(float dt) {
     sun_update_angle();
 }
 
+RGBA torch_light(Vec2 point_pos) {
+    Vec2 mouse = multiply_affine_vec2(inverse(camera.view_transform()), controls.mouse);
+    float min_dot = 0.8;
+    float max_distance = 50;
+
+    Vec2 torch_pos = position[controlling];
+    Vec2 torch_dir = normalize(mouse - torch_pos);
+    Vec2 torch_to_point = vec2_sub(point_pos, torch_pos);
+    float distance = vec2_norm(torch_to_point);
+    float distance_intensity = fmaxf(0, fminf(1, (1 - sqrt(distance/max_distance))));
+    float d = vec2_dot(vec2_div(torch_to_point, distance), torch_dir);
+    float beam_intensity = fmaxf(0, sqrt(d - min_dot));
+    float intensity = clampf(3 * beam_intensity * distance_intensity, 0, 1);
+    return intensity * RGBA{1, 1, 1, 1};
+}
+
 void world_draw() {
     Affine t = camera.view_transform();
+    Affine ti = inverse(t);
     gfx_draw_sprite(&ground, t, false);
 
     for (int id = 0; id < n_ids; ++id) {
@@ -325,10 +349,11 @@ void world_draw() {
     const RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
     for (int y = 0; y < camera.res_y; ++y)
         for (int x = 0; x < camera.res_x; ++x) {
+            Vec2 world_pos = multiply_affine_vec2(ti, {(float)x, (float)y});
             RGBA color = gfx_get(x, y);
             float diffuse = fmax(0, vec3_dot(normal, sun_vec));
-            RGBA shaded = (diffuse * sun_color) * color;
-            gfx_set(x, y, shaded);
+            RGBA shaded = rgba_add(diffuse * sun_color, torch_light(world_pos)) * color;
+            gfx_set(x, y, rgba_clamp(shaded));
         }
 }
 
@@ -351,7 +376,9 @@ void world_key_input(int action, int key) {
     }
 }
 
-void world_mouse_cursor_position(float xpos, float ypos) {}
+void world_mouse_cursor_position(float xpos, float ypos) {
+    controls.mouse = {xpos*camera.res_x, ypos*camera.res_y};
+}
 
 void world_mouse_button(int button, int action) {}
 

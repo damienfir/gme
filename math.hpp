@@ -34,6 +34,10 @@ inline Vec2 operator-(Vec2 a, Vec2 b) {
     return Vec2{a.x-b.x, a.y-b.y};
 }
 
+inline Vec2 vec2_sub(Vec2 a, Vec2 b) {
+    return Vec2{a.x-b.x, a.y-b.y};
+}
+
 inline Vec2 operator-(Vec2 a, float b) {
     return Vec2{a.x-b, a.y-b};
 }
@@ -50,11 +54,19 @@ inline float dot(Vec2 a, Vec2 b) {
     return a.x * b.x + a.y * b.y;
 }
 
+inline float vec2_dot(Vec2 a, Vec2 b) {
+    return a.x * b.x + a.y * b.y;
+}
+
 inline float vec3_dot(Vec3 a, Vec3 b) {
     return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
 inline Vec2 operator/(Vec2 v, float d) {
+    return Vec2{v.x/d, v.y/d};
+}
+
+inline Vec2 vec2_div(Vec2 v, float d) {
     return Vec2{v.x/d, v.y/d};
 }
 
@@ -77,6 +89,11 @@ inline float norm(Vec2 v) {
 inline Vec2 normalize(Vec2 v) {
     return v / norm(v);
 }
+
+inline Vec2 vec2_normalize(Vec2 v) {
+    return v / norm(v);
+}
+
 
 inline Vec2 rotate(Vec2 v, float rad) {
     Vec2 w;
@@ -275,6 +292,10 @@ inline Affine inverse(Affine a) {
     b.m = inverse(a.m);
     b.t = -mul(b.m, a.t);
     return b;
+}
+
+inline float clampf(float x, float a, float b) {
+    return fminf(b, fmaxf(a, x));
 }
 
 #endif /* MATH_HPP */
