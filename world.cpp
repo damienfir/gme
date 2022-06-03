@@ -70,7 +70,7 @@ int n_ids = 0;
 Controls controls;
 int controlling;
 unsigned long time_ms;
-float time_scaling = 10000;
+float time_scaling = 1000;
 float ms_accumulated;
 float start_time_hours = 6.f;
 Camera camera;
@@ -86,13 +86,15 @@ float get_time_of_day() {
 }
 
 void sun_update_angle() {
+    // TODO: use sunset/sunrise to set the angle
+    // const float sunset = 18;
+    // const float noon = 12;
+    // const float sunrise = 6;
     sun.angle = 2 * M_PI * get_time_of_day() / 24 - M_PI / 2;
     printf("angle: %f\n", sun.angle);
 }
 
 RGB kelvin_to_color(float t) {
-    RGB c;
-
     t /= 100;
 
     float red = 255;
@@ -123,18 +125,16 @@ RGB kelvin_to_color(float t) {
     return rgb_clamp(rgb_div({red, green, blue}, 255.f));
 }
 
-float sun_temperature_from_time(float time) {
+float sun_temperature_from_angle(float angle) {
+    const float pi2 = M_PI/2;
     const float temp_sunrise = 2500;
     const float temp_sunset = 2500;
     const float temp_noon = 7000;
-    const float sunset = 18;
-    const float noon = 12;
-    const float sunrise = 6;
-    if (time > sunrise && time < noon) {
-        float x = (time - sunrise) / (noon - sunrise);
+    if (angle > 0 && angle < pi2) {
+        float x = angle / pi2;
         return (1 - x) * temp_sunrise + x * temp_noon;
-    } else if (time > noon && time < sunset) {
-        float x = (time - noon) / (sunset - noon);
+    } else if (angle > pi2) {
+        float x = (angle - pi2) / pi2;
         return (1 - x) * temp_noon + x * temp_sunset;
     } else {
         return 0;
@@ -321,7 +321,7 @@ void world_draw() {
 
     const Vec3 normal = {0, 0, 1};
     const Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
-    const RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_time(get_time_of_day()));
+    const RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_angle(sun.angle));
     const RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
     for (int y = 0; y < camera.res_y; ++y)
         for (int x = 0; x < camera.res_x; ++x) {
