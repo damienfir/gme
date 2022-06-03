@@ -97,7 +97,6 @@ void sun_update_angle() {
     // const float noon = 12;
     // const float sunrise = 6;
     sun.angle = 2 * M_PI * get_time_of_day() / 24 - M_PI / 2;
-    printf("angle: %f\n", sun.angle);
 }
 
 RGB kelvin_to_color(float t) {
@@ -133,7 +132,7 @@ RGB kelvin_to_color(float t) {
 }
 
 float sun_temperature_from_angle(float angle) {
-    const float pi2 = M_PI/2;
+    const float pi2 = M_PI / 2;
     const float temp_sunrise = 2500;
     const float temp_sunset = 2500;
     const float temp_noon = 7000;
@@ -319,13 +318,46 @@ RGBA torch_light(Vec2 point_pos) {
     float min_dot = 0.8;
     float max_distance = 50;
 
-    Vec2 mouse = multiply_affine_vec2(inverse(camera.view_transform()), controls.mouse);
     Vec2 torch_pos = position[controlling];
-    Vec2 torch_dir = normalize(mouse - torch_pos);
     Vec2 torch_to_point = vec2_sub(point_pos, torch_pos);
-    float distance = vec2_norm(torch_to_point);
-    float distance_intensity = fmaxf(0, fminf(1, (1 - sqrt(distance/max_distance))));
-    float d = vec2_dot(vec2_div(torch_to_point, distance), torch_dir);
+    float distance_torch_point = vec2_norm(torch_to_point);
+
+    Vec2 torch_to_point_normalized = vec2_div(torch_to_point, distance_torch_point);
+    Vec2 perp = {torch_to_point_normalized.y, -torch_to_point_normalized.x};
+
+    bool in_shadow = false;
+    for (int i = 0; i < n_ids; ++i) {
+        if (i == controlling) continue;
+
+        Shape s = shape[i];
+        if (s.type == CIRCLE) {
+            Vec2 shape_pos = position[i];
+
+            if (vec2_norm(vec2_sub(shape_pos, point_pos)) < s.radius) {
+                in_shadow = true;
+                break;
+            }
+
+            Vec2 torch_to_shape = vec2_sub(shape_pos, torch_pos);
+            if (distance_torch_point < vec2_norm(torch_to_shape)) continue;
+
+            if (vec2_dot(torch_to_shape, torch_to_point) < 0) continue;
+
+            float distance_line_origin = vec2_dot(perp, torch_to_shape);
+            if (fabsf(distance_line_origin) < s.radius) {
+                // printf("d: %f\n", distance_line_origin);
+                in_shadow = true;
+                break;
+            }
+        }
+    }
+    if (in_shadow)
+        return {0, 0, 0, 1};
+
+    Vec2 mouse = multiply_affine_vec2(inverse(camera.view_transform()), controls.mouse);
+    Vec2 torch_dir = normalize(mouse - torch_pos);
+    float distance_intensity = fmaxf(0, fminf(1, (1 - sqrt(distance_torch_point / max_distance))));
+    float d = vec2_dot(torch_to_point_normalized, torch_dir);
     float beam_intensity = fmaxf(0, sqrt(d - min_dot));
     float intensity = clampf(3 * beam_intensity * distance_intensity, 0, 1);
     return intensity * RGBA{1, 1, 1, 1};
@@ -352,7 +384,9 @@ void world_draw() {
             Vec2 world_pos = multiply_affine_vec2(ti, {(float)x, (float)y});
             RGBA color = gfx_get(x, y);
             float diffuse = fmax(0, vec3_dot(normal, sun_vec));
-            RGBA shaded = rgba_add(diffuse * sun_color, torch_light(world_pos)) * color;
+            RGBA sun_light = diffuse * sun_color;
+            RGBA ambient_light = 0.1 * RGBA{1, 1, 1, 1};
+            RGBA shaded = rgba_add(ambient_light, rgba_add(sun_light, torch_light(world_pos))) * color;
             gfx_set(x, y, rgba_clamp(shaded));
         }
 }
@@ -377,7 +411,7 @@ void world_key_input(int action, int key) {
 }
 
 void world_mouse_cursor_position(float xpos, float ypos) {
-    controls.mouse = {xpos*camera.res_x, ypos*camera.res_y};
+    controls.mouse = {xpos * camera.res_x, ypos * camera.res_y};
 }
 
 void world_mouse_button(int button, int action) {}
