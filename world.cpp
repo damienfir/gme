@@ -70,7 +70,7 @@ int n_ids = 0;
 Controls controls;
 int controlling;
 unsigned long time_ms;
-float time_scaling = 1000;
+float time_scaling = 10000;
 float ms_accumulated;
 float start_time_hours = 6.f;
 Camera camera;
@@ -130,14 +130,14 @@ float sun_temperature_from_angle(float angle) {
     const float temp_sunrise = 2500;
     const float temp_sunset = 2500;
     const float temp_noon = 7000;
-    if (angle > 0 && angle < pi2) {
+    if (angle >= 0 && angle < pi2) {
         float x = angle / pi2;
         return (1 - x) * temp_sunrise + x * temp_noon;
-    } else if (angle > pi2) {
+    } else if (angle >= pi2 && angle < M_PI) {
         float x = (angle - pi2) / pi2;
         return (1 - x) * temp_noon + x * temp_sunset;
     } else {
-        return 0;
+        return temp_sunrise;
     }
 }
 
