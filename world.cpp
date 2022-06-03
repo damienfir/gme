@@ -75,7 +75,7 @@ int n_ids = 0;
 Controls controls;
 int controlling;
 unsigned long time_ms;
-float time_scaling = 10000;
+float time_scaling = 1000;
 float ms_accumulated;
 float start_time_hours = 6.f;
 Camera camera;
@@ -316,10 +316,10 @@ void world_update(float dt) {
 }
 
 RGBA torch_light(Vec2 point_pos) {
-    Vec2 mouse = multiply_affine_vec2(inverse(camera.view_transform()), controls.mouse);
     float min_dot = 0.8;
     float max_distance = 50;
 
+    Vec2 mouse = multiply_affine_vec2(inverse(camera.view_transform()), controls.mouse);
     Vec2 torch_pos = position[controlling];
     Vec2 torch_dir = normalize(mouse - torch_pos);
     Vec2 torch_to_point = vec2_sub(point_pos, torch_pos);
@@ -383,7 +383,7 @@ void world_mouse_cursor_position(float xpos, float ypos) {
 void world_mouse_button(int button, int action) {}
 
 void world_scroll_input(float xoffset, float yoffset) {
-    float delta = yoffset * 20;
+    float delta = -yoffset * 20;
     camera.size_x += delta;
     camera.size_y += delta;
     const float min_size = 10;
