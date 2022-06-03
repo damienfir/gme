@@ -73,9 +73,9 @@ Image texture[10];
 Image ground;
 
 Image texture_grass_create() {
-    Image t = image_create(10, 10);
+    Image t = image_create(30, 30);
 
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 900; ++i) {
         RGBA c = rgba_from_hex(0x7cb518);
         RGBA noise = randf() * 0.05 * RGBA{1, 1, 1, 1};
         t.data[i] = c + noise;
@@ -85,9 +85,9 @@ Image texture_grass_create() {
 }
 
 Image texture_dirt_create() {
-    Image t = image_create(10, 10);
+    Image t = image_create(30, 30);
 
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 900; ++i) {
         RGBA c = rgba_from_hex(0x6c584c);
         RGBA noise = randf() * 0.05 * RGBA{1, 1, 1, 1};
         t.data[i] = c + noise;
@@ -117,9 +117,9 @@ int add_tree(Vec2 p) {
 }
 
 RGBA texture_sample(Image* t, Vec2 p) {
-    int x = (int)p.x % 10;
-    int y = (int)p.y % 10;
-    return t->data[y * 10 + x];
+    int x = (int)p.x % t->w;
+    int y = (int)p.y % t->h;
+    return t->data[y * t->w + x];
 }
 
 void render_ground() {
@@ -269,3 +269,14 @@ void world_key_input(int action, int key) {
 void world_mouse_cursor_position(float xpos, float ypos) {}
 
 void world_mouse_button(int button, int action) {}
+
+void world_scroll_input(float xoffset, float yoffset) {
+    float delta = yoffset * 20;
+    camera.size_x += delta;
+    camera.size_y += delta;
+    const float min_size = 10;
+    if (camera.size_x < min_size || camera.size_y < min_size) {
+        camera.size_x -= delta;
+        camera.size_y -= delta;
+    }
+}

@@ -143,6 +143,10 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     world_mouse_button(button, action);
 }
 
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    world_scroll_input(xoffset, yoffset);
+}
 
 int main(int argc, char** argv) {
     std::srand(std::time(0));
@@ -166,6 +170,7 @@ int main(int argc, char** argv) {
     glfwSetKeyCallback(window, key_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetScrollCallback(window, scroll_callback);
 
     init_texture();
     world_init();
