@@ -16,6 +16,12 @@ struct Vec2 {
     float y = 0;
 };
 
+struct Vec3 {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+};
+
 inline bool is_zero(Vec2 v) {
     return v.x == 0 and v.y == 0;
 }
@@ -42,6 +48,10 @@ inline Vec2 operator+(Vec2 a, float x) {
 
 inline float dot(Vec2 a, Vec2 b) {
     return a.x * b.x + a.y * b.y;
+}
+
+inline float vec3_dot(Vec3 a, Vec3 b) {
+    return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
 inline Vec2 operator/(Vec2 v, float d) {

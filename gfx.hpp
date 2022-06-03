@@ -1,8 +1,26 @@
 #ifndef GFX_HPP
 #define GFX_HPP
 
-#include "math.hpp"
 #include <stdio.h>
+#include "math.hpp"
+
+struct RGB {
+    float r = 0;
+    float g = 0;
+    float b = 0;
+};
+
+inline RGB rgb_div(RGB c, float d) {
+    return {c.r / d, c.g / d, c.b / d};
+}
+
+inline RGB rgb_clamp(RGB c) {
+    return {
+        fminf(1, fmaxf(0, c.r)),
+        fminf(1, fmaxf(0, c.b)),
+        fminf(1, fmaxf(0, c.g)),
+    };
+}
 
 struct RGBA {
     float r = 0;
@@ -12,18 +30,22 @@ struct RGBA {
 };
 
 inline RGBA operator*(float a, RGBA v) {
-    return RGBA{v.r*a, v.g*a, v.b*a, v.a*a};
+    return RGBA{v.r * a, v.g * a, v.b * a, v.a * a};
+}
+
+inline RGBA operator*(RGBA a, RGBA b) {
+    return RGBA{a.r * b.r, a.g * b.g, a.b * b.b, a.a * b.a};
 }
 
 inline RGBA operator/(RGBA v, float a) {
-    return RGBA{v.r/a, v.g/a, v.b/a, v.a/a};
+    return RGBA{v.r / a, v.g / a, v.b / a, v.a / a};
 }
 
 inline RGBA operator+(RGBA a, RGBA b) {
-    return RGBA{a.r+b.r, a.g+b.g, a.b+b.b, a.a+b.a};
+    return RGBA{a.r + b.r, a.g + b.g, a.b + b.b, a.a + b.a};
 }
 
-inline RGBA& operator+=(RGBA &a, RGBA b) {
+inline RGBA& operator+=(RGBA& a, RGBA b) {
     a.r += b.r;
     a.g += b.g;
     a.b += b.b;
@@ -44,7 +66,7 @@ inline RGBA rgba_from_hex(int hex) {
     int r = (hex >> 16) & 0xff;
     int g = (hex >> 8) & 0xff;
     int b = hex & 0xff;
-    return {r/255.f, g/255.f, b/255.f, 1.f};
+    return {r / 255.f, g / 255.f, b / 255.f, 1.f};
 }
 
 struct Sprite {
@@ -56,10 +78,9 @@ struct Sprite {
         if (x < 0 || x >= w || y < 0 || y >= w) {
             return {};
         }
-        return data[y*w+x];
+        return data[y * w + x];
     }
 };
-
 
 // Drawable image
 struct Image {

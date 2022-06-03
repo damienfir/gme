@@ -53,6 +53,10 @@ struct Texture {
     RGBA data[100];
 };
 
+struct Sun {
+    float angle;
+};
+
 const int max_items = 1024;
 
 int world_x = 1000;
@@ -66,11 +70,76 @@ int n_ids = 0;
 Controls controls;
 int controlling;
 unsigned long time_ms;
-float time_scaling = 1;
+float time_scaling = 10000;
 float ms_accumulated;
+float start_time_hours = 6.f;
 Camera camera;
 Image texture[10];
 Image ground;
+Sun sun;
+
+float get_time_of_day() {
+    int ms_in_hour = 3600 * 1000;
+    int offset = start_time_hours * ms_in_hour;
+    unsigned long clock = (time_ms + offset) % (24 * ms_in_hour);
+    return clock / (float)ms_in_hour;
+}
+
+void sun_update_angle() {
+    sun.angle = 2 * M_PI * get_time_of_day() / 24 - M_PI / 2;
+    printf("angle: %f\n", sun.angle);
+}
+
+RGB kelvin_to_color(float t) {
+    RGB c;
+
+    t /= 100;
+
+    float red = 255;
+    if (t >= 66) {
+        red = t - 60;
+        red = 329.698727446 * (pow(red, -0.1332047592));
+    }
+
+    float green;
+    if (t <= 66) {
+        green = t;
+        green = 99.4708025861 * log(green) - 161.1195681661;
+    } else {
+        green = t - 60;
+        green = 288.1221695283 * (pow(green, -0.0755148492));
+    }
+
+    float blue = 255;
+    if (t < 66) {
+        if (t <= 19) {
+            blue = 0;
+        } else {
+            blue = t - 10;
+            blue = 138.5177312231 * log(blue) - 305.0447927307;
+        }
+    }
+
+    return rgb_clamp(rgb_div({red, green, blue}, 255.f));
+}
+
+float sun_temperature_from_time(float time) {
+    const float temp_sunrise = 2500;
+    const float temp_sunset = 2500;
+    const float temp_noon = 7000;
+    const float sunset = 18;
+    const float noon = 12;
+    const float sunrise = 6;
+    if (time > sunrise && time < noon) {
+        float x = (time - sunrise) / (noon - sunrise);
+        return (1 - x) * temp_sunrise + x * temp_noon;
+    } else if (time > noon && time < sunset) {
+        float x = (time - noon) / (sunset - noon);
+        return (1 - x) * temp_noon + x * temp_sunset;
+    } else {
+        return 0;
+    }
+}
 
 Image texture_grass_create() {
     Image t = image_create(30, 30);
@@ -148,7 +217,7 @@ void render_ground() {
                 c = c / weights;
             }
 
-            ground.data[y*ground.w + x] = c;
+            ground.data[y * ground.w + x] = c;
         }
 }
 
@@ -174,6 +243,8 @@ void world_init() {
 
     ground = image_create(world_x, world_y);
     render_ground();
+
+    sun.angle = M_PI / 2.f;
 }
 
 void resolve_collision(int a, int b) {
@@ -193,8 +264,8 @@ void resolve_collision(int a, int b) {
 }
 
 void world_update(float dt) {
-    time_ms += dt * 1000;
-    ms_accumulated += dt * 1000;
+    time_ms += time_scaling * dt * 1000;
+    ms_accumulated += time_scaling * dt * 1000;
     if (ms_accumulated > 1000) {
         // printf("seconds: %d\n", time_ms / 1000);
         ms_accumulated = 0;
@@ -232,7 +303,9 @@ void world_update(float dt) {
         }
     }
 
-    camera.position = position[controlling] - Vec2{camera.size_x/2, camera.size_y/2};
+    camera.position = position[controlling] - Vec2{camera.size_x / 2, camera.size_y / 2};
+
+    sun_update_angle();
 }
 
 void world_draw() {
@@ -245,6 +318,18 @@ void world_draw() {
             case CIRCLE: gfx_draw_point(multiply_affine_vec2(t, position[id]), s.color, camera.to_viewport(s.radius));
         }
     }
+
+    const Vec3 normal = {0, 0, 1};
+    const Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
+    const RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_time(get_time_of_day()));
+    const RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
+    for (int y = 0; y < camera.res_y; ++y)
+        for (int x = 0; x < camera.res_x; ++x) {
+            RGBA color = gfx_get(x, y);
+            float diffuse = fmax(0, vec3_dot(normal, sun_vec));
+            RGBA shaded = (diffuse * sun_color) * color;
+            gfx_set(x, y, shaded);
+        }
 }
 
 void world_key_input(int action, int key) {
