@@ -38,6 +38,10 @@ inline Vec2 vec2_sub(Vec2 a, Vec2 b) {
     return Vec2{a.x-b.x, a.y-b.y};
 }
 
+inline Vec3 vec3_sub(Vec3 a, Vec3 b) {
+    return {a.x-b.x, a.y-b.y, a.z-b.z};
+}
+
 inline Vec2 operator-(Vec2 a, float b) {
     return Vec2{a.x-b, a.y-b};
 }
@@ -62,12 +66,20 @@ inline float vec3_dot(Vec3 a, Vec3 b) {
     return a.x*b.x + a.y*b.y + a.z*b.z;
 }
 
+inline Vec3 vec3_scale(Vec3 v, float s) {
+    return {v.x * s, v.y * s, v.z * s};
+}
+
 inline Vec2 operator/(Vec2 v, float d) {
     return Vec2{v.x/d, v.y/d};
 }
 
 inline Vec2 vec2_div(Vec2 v, float d) {
     return Vec2{v.x/d, v.y/d};
+}
+
+inline Vec3 vec3_div(Vec3 v, float d) {
+    return {v.x/d, v.y/d, v.z/d};
 }
 
 inline Vec2 operator*(Vec2 v, float d) {
@@ -79,7 +91,11 @@ inline Vec2 operator*(float d, Vec2 v) {
 }
 
 inline float vec2_norm(Vec2 v) {
-    return sqrt(v.x*v.x + v.y*v.y);
+    return sqrtf(v.x*v.x + v.y*v.y);
+}
+
+inline float vec3_norm(Vec3 v) {
+    return sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
 }
 
 inline float norm(Vec2 v) {
@@ -94,6 +110,17 @@ inline Vec2 vec2_normalize(Vec2 v) {
     return v / norm(v);
 }
 
+inline Vec3 vec3_normalize(Vec3 v) {
+    return vec3_div(v, vec3_norm(v));
+}
+
+inline Vec3 vec3_project_onto(Vec3 a, Vec3 b) {
+    return vec3_scale(b, vec3_dot(a, b));
+}
+
+inline float vec3_pnorm(float p, Vec3 v) {
+    return powf(powf(fabs(v.x), p) + powf(fabs(v.y), p) + powf(fabs(v.z), p), 1/p);
+}
 
 inline Vec2 rotate(Vec2 v, float rad) {
     Vec2 w;
@@ -102,19 +129,10 @@ inline Vec2 rotate(Vec2 v, float rad) {
     return w;
 }
 
-
 // int modulo_positive(int x, int m) {
 //     int y = x % m;
 //     if (y < 0) return y + m;
 //     return y;
-// }
-
-// int clamp(int x, int mi, int ma) {
-//     return std::min(ma, std::max(mi, x));
-// }
-
-// float clamp(float x, float mi, float ma) {
-//     return std::min(ma, std::max(mi, x));
 // }
 
 

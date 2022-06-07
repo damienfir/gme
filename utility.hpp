@@ -8,6 +8,10 @@ inline void print_vec(const char* name, Vec2 v) {
     printf("%s: %.2f, %.2f\n", name, v.x, v.y);
 }
 
+inline void vec3_print(const char* name, Vec3 v) {
+    printf("%s: %.2f, %.2f, %.2f\n", name, v.x, v.y, v.z);
+}
+
 inline void print_affine(const char* name, Affine m) {
     printf("%s:\n", name);
     printf("%.2f %.2f %.2f\n", m.m.m00, m.m.m01, m.t.x);

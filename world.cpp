@@ -75,7 +75,7 @@ int n_ids = 0;
 Controls controls;
 int controlling;
 unsigned long time_ms;
-float time_scaling = 1000;
+float time_scaling = 3000;
 float ms_accumulated;
 float start_time_hours = 6.f;
 Camera camera;
@@ -236,8 +236,8 @@ void world_init() {
     camera.position = {0, 0};
     camera.size_x = 100;
     camera.size_y = 100;
-    camera.res_x = 512;
-    camera.res_y = 512;
+    camera.res_x = 256;
+    camera.res_y = 256;
 
     ground_sample[n_ground_sample++] = {.type = GRASS, .p = {50, 50}};
     ground_sample[n_ground_sample++] = {.type = GRASS, .p = {40, 60}};
@@ -327,7 +327,8 @@ RGBA torch_light(Vec2 point_pos) {
 
     bool in_shadow = false;
     for (int i = 0; i < n_ids; ++i) {
-        if (i == controlling) continue;
+        if (i == controlling)
+            continue;
 
         Shape s = shape[i];
         if (s.type == CIRCLE) {
@@ -339,9 +340,11 @@ RGBA torch_light(Vec2 point_pos) {
             }
 
             Vec2 torch_to_shape = vec2_sub(shape_pos, torch_pos);
-            if (distance_torch_point < vec2_norm(torch_to_shape)) continue;
+            if (distance_torch_point < vec2_norm(torch_to_shape))
+                continue;
 
-            if (vec2_dot(torch_to_shape, torch_to_point) < 0) continue;
+            if (vec2_dot(torch_to_shape, torch_to_point) < 0)
+                continue;
 
             float distance_line_origin = vec2_dot(perp, torch_to_shape);
             if (fabsf(distance_line_origin) < s.radius) {
@@ -363,6 +366,39 @@ RGBA torch_light(Vec2 point_pos) {
     return intensity * RGBA{1, 1, 1, 1};
 }
 
+bool is_occluded(Vec3 light_pos, Vec3 point_pos, int x, int y) {
+    // Optimization: look at objects within a margin of viewing region
+    Vec3 point_to_light = vec3_sub(light_pos, point_pos);
+    float dist_point_light = vec3_norm(point_to_light);
+    Vec3 point_to_light_normalized = vec3_div(point_to_light, dist_point_light);
+
+    for (int i = 0; i < n_ids; ++i) {
+        // Considering every object as a sphere
+        Shape s = shape[i];
+
+        Vec2 shape_pos_2d = position[i];
+        Vec3 shape_pos = {shape_pos_2d.x, shape_pos_2d.y, 0};
+
+        if (vec3_norm(vec3_sub(shape_pos, point_pos)) < s.radius) {
+            continue;
+        }
+
+        Vec3 point_to_shape = vec3_sub(shape_pos, point_pos);
+        float dist_shape_light = vec3_norm(vec3_sub(shape_pos, light_pos));
+        if (dist_point_light < dist_shape_light) continue;
+
+        Vec3 shape_on_line = vec3_project_onto(point_to_shape, point_to_light_normalized);
+
+        // Use a p-norm to simulate a cube instead of a sphere, square shadows look more realistic (and
+        // more compatible with a lot of different shapes)
+        float dist_shape_line = vec3_pnorm(8, vec3_sub(point_to_shape, shape_on_line));
+        if (dist_shape_line < s.radius)
+            return true;
+    }
+
+    return false;
+}
+
 void world_draw() {
     Affine t = camera.view_transform();
     Affine ti = inverse(t);
@@ -375,18 +411,29 @@ void world_draw() {
         }
     }
 
-    const Vec3 normal = {0, 0, 1};
-    const Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
-    const RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_angle(sun.angle));
-    const RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
+    RGBA ambient_light = 0.1 * RGBA{1, 1, 1, 1};
+    Vec3 normal = {0, 0, 1};
+    Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
+    RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_angle(sun.angle));
+    RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
+    Vec3 sun_pos_3d = vec3_scale(sun_vec, 1000);
     for (int y = 0; y < camera.res_y; ++y)
         for (int x = 0; x < camera.res_x; ++x) {
             Vec2 world_pos = multiply_affine_vec2(ti, {(float)x, (float)y});
+
+            RGBA illumination = ambient_light;
+
+            // illumination = rgba_add(illumination, torch_light(world_pos));
+
+            Vec3 point_3d = {world_pos.x, world_pos.y, 0};
+            if (!is_occluded(sun_pos_3d, point_3d, x, y)) {
+                float diffuse = fmax(0, vec3_dot(normal, sun_vec));
+                RGBA sun_light = diffuse * sun_color;
+                illumination = rgba_add(illumination, sun_light);
+            }
+
             RGBA color = gfx_get(x, y);
-            float diffuse = fmax(0, vec3_dot(normal, sun_vec));
-            RGBA sun_light = diffuse * sun_color;
-            RGBA ambient_light = 0.1 * RGBA{1, 1, 1, 1};
-            RGBA shaded = rgba_add(ambient_light, rgba_add(sun_light, torch_light(world_pos))) * color;
+            RGBA shaded = illumination * color;
             gfx_set(x, y, rgba_clamp(shaded));
         }
 }
@@ -426,3 +473,6 @@ void world_scroll_input(float xoffset, float yoffset) {
         camera.size_y -= delta;
     }
 }
+
+// NEXT: add cast shadows from the sun
+//  for now, make everything a sphere to make implementation easier

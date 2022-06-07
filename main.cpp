@@ -54,8 +54,8 @@ void init_texture() {
 
     // int w = state.camera.res_x;
     // int h = state.camera.res_y;
-    int w = 512;
-    int h = 512;
+    int w = 256;
+    int h = 256;
     tex.buffer = {
         .w = w,
         .h = h,
