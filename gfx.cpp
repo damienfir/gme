@@ -36,6 +36,10 @@ int gfx_width() {
     return image.w;
 }
 
+int gfx_height() {
+    return image.h;
+}
+
 bool in_buffer(int x, int y) {
     return x >= 0 and y >= 0 and x < image.w and y < image.h;
 }

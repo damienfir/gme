@@ -236,8 +236,8 @@ void world_init() {
     camera.position = {0, 0};
     camera.size_x = 100;
     camera.size_y = 100;
-    camera.res_x = 256;
-    camera.res_y = 256;
+    camera.res_x = gfx_width();
+    camera.res_y = gfx_height();
 
     ground_sample[n_ground_sample++] = {.type = GRASS, .p = {50, 50}};
     ground_sample[n_ground_sample++] = {.type = GRASS, .p = {40, 60}};
@@ -423,7 +423,7 @@ void world_draw() {
 
             RGBA illumination = ambient_light;
 
-            // illumination = rgba_add(illumination, torch_light(world_pos));
+            illumination = rgba_add(illumination, torch_light(world_pos));
 
             Vec3 point_3d = {world_pos.x, world_pos.y, 0};
             if (!is_occluded(sun_pos_3d, point_3d, x, y)) {
@@ -474,5 +474,3 @@ void world_scroll_input(float xoffset, float yoffset) {
     }
 }
 
-// NEXT: add cast shadows from the sun
-//  for now, make everything a sphere to make implementation easier

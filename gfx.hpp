@@ -105,6 +105,7 @@ void gfx_init(int w, int h);
 RGBA gfx_get(int x, int y);
 void gfx_set(int x, int y, RGBA c);
 int gfx_width();
+int gfx_height();
 void gfx_clear_solid(RGBA c = {});
 void gfx_draw_line(Vec2 a, Vec2 b, RGBA color, float thickness);
 void gfx_draw_point(Vec2 pos, RGBA color, float radius);

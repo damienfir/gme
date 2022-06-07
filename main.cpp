@@ -52,8 +52,6 @@ void init_texture() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    // int w = state.camera.res_x;
-    // int h = state.camera.res_y;
     int w = 256;
     int h = 256;
     tex.buffer = {
