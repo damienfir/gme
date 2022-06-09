@@ -64,8 +64,10 @@ struct Torch {
 };
 
 struct Water {
-    int w;
-    int h;
+    int w = 0;
+    int h = 0;
+    int x;
+    int y;
     float *heightmap;
     float *velocity;
     float *temp;
@@ -77,14 +79,16 @@ struct Ground {
 };
 
 struct RenderingBuffer {
+    float *test;
     Vec3 *normal;
     Vec3 *albedo;
 };
 
 const int max_items = 1024;
 
-int world_x = 1000;
-int world_y = 1000;
+const int world_x = 1000;
+const int world_y = 1000;
+const int world_size = world_x * world_y;
 Vec2 position[max_items];
 Vec2 velocity[max_items];
 Shape shape[max_items];
@@ -97,89 +101,117 @@ float ms_accumulated;
 float start_time_hours = 9.f;
 Camera camera;
 Image texture[10];
-// Image ground_sprite;
 Sun sun;
 Torch torch;
-Water water;
-Image water_sprite;
 Ground ground;
 RenderingBuffer rendering;
+Image ground_sprite;
+Water water[10];
 
-void water_init(int width, int height) {
-    water.h = height;
-    water.w = width;
-    water.heightmap = (float*)malloc(height*width*(sizeof water.heightmap));
-    water.temp = (float*)malloc(height*width*(sizeof water.temp));
-    water.velocity = (float*)malloc(height*width*(sizeof water.velocity));
-    water.mask = (bool*)malloc(height*width*(sizeof water.mask));
-    for (int i = 0; i < width*height; ++i) {
-        water.heightmap[i] = 0;
-        water.velocity[i] = 0;
-        water.mask[i] = 1;
+void water_add(int x, int y, int width, int height) {
+    int id = 0;
+    while (id < 10) {
+        if (water[id].h == 0) break;
+        id++;
     }
+    assert(id < 10);
 
-    water.heightmap[10 * width + 1] = 3;
-    water.heightmap[11 * width + 1] = 3;
+    Water *w = &water[id];
+    w->x = x;
+    w->y = y;
+    w->h = height;
+    w->w = width;
+    w->heightmap = (float*)malloc(height*width*sizeof(float));
+    w->temp = (float*)malloc(height*width*sizeof(float));
+    w->velocity = (float*)malloc(height*width*sizeof(float));
+    w->mask = (bool*)malloc(height*width*sizeof(bool));
 
+    for (int i = 0; i < width*height; ++i) w->mask[i] = 1;
+    
     // Define boundaries
     for (int y = 0; y < height; ++y) {
-        water.mask[y * width] = 0;
-        water.mask[y * width + width - 1] = 0;
+        w->mask[y * width] = 0;
+        w->mask[y * width + width - 1] = 0;
     }
 
     for (int x = 0; x < width; ++x) {
-        water.mask[x] = 0;
-        water.mask[(height-1) * width + x] = 0;
+        w->mask[x] = 0;
+        w->mask[(height-1) * width + x] = 0;
     }
 
-    water.mask[10 * width + 10] = 0;
-    water.mask[11 * width + 10] = 0;
-    water.mask[12 * width + 10] = 0;
-    water.mask[13 * width + 10] = 0;
-    water.mask[14 * width + 10] = 0;
-    water.mask[15 * width + 10] = 0;
-    water.mask[16 * width + 10] = 0;
-    water.mask[17 * width + 10] = 0;
-    water.mask[18 * width + 10] = 0;
+    w->mask[10 * width + 10] = 0;
+    w->mask[11 * width + 10] = 0;
+    w->mask[12 * width + 10] = 0;
+    w->mask[13 * width + 10] = 0;
+    w->mask[14 * width + 10] = 0;
+    w->mask[15 * width + 10] = 0;
+    w->mask[16 * width + 10] = 0;
+    w->mask[17 * width + 10] = 0;
+    w->mask[18 * width + 10] = 0;
 
-    water_sprite = image_create(width, height);
+    for (int i = 0; i < width*height; ++i) {
+        if (!w->mask[i]) continue;
+
+        w->heightmap[i] = 0;
+        w->velocity[i] = 0;
+
+        int xi = i % width;
+        int yi = i / width;
+        int world_xy = (y + yi) * world_x + (x + xi);
+        ground.mat[world_xy] = WATER;
+        rendering.normal[world_xy] = {0, 0, 1};
+        rendering.albedo[world_xy] = {0, 0, 1};
+    }
+
+    w->heightmap[10 * width + 1] = 3;
+    w->heightmap[11 * width + 1] = 3;
+
 }
 
 void water_update(float dt) {
-    bool* m = water.mask;
-    float* h = water.heightmap;
+    for (int i = 0; i < 10; ++i) {
+        if (water[i].h == 0) continue;
 
-    for (int y = 0; y < water.h; ++y) {
-        for (int x = 0; x < water.w; ++x) {
-            int xy = y * water.w + x;
-            if (!m[xy]) continue;
+        Water* w = &water[i];
 
-            int x0y = m[xy - 1] ? xy - 1 : xy;
-            int x1y = m[xy + 1] ? xy + 1 : xy;
-            int xy0 = m[xy - water.w] ? xy - water.w : xy;
-            int xy1 = m[xy + water.w] ? xy + water.w : xy;
-            int x0y0 = m[xy0 - 1] ? xy0 - 1 : xy0;
-            int x1y0 = m[xy0 + 1] ? xy0 + 1 : xy0;
-            int x0y1 = m[xy1 - 1] ? xy1 - 1 : xy1;
-            int x1y1 = m[xy1 + 1] ? xy1 + 1 : xy1;
+        bool* m = w->mask;
+        float* h = w->heightmap;
 
-            const float c2 = 100;
-            float sq2 = 1/sqrtf(2);
-            float s = 4*sq2 + 4;
-            float f = c2 * (
-                    sq2 * h[x0y0] + sq2 * h[x0y1] + sq2 * h[x1y1] + sq2 * h[x1y0]
-                    + h[x0y] + h[x1y] + h[xy0] + h[xy1]
-                    - s * h[xy]
-                    ) / s;
-            water.velocity[xy] += f * dt;
-            water.velocity[xy] *= 0.995;
-            water.temp[xy] = h[xy] + water.velocity[xy] * dt;
+        for (int y = 0; y < w->h; ++y) {
+            for (int x = 0; x < w->w; ++x) {
+                int xy = y * w->w + x;
+                if (!m[xy]) continue;
+
+                int x0y = m[xy - 1] ? xy - 1 : xy;
+                int x1y = m[xy + 1] ? xy + 1 : xy;
+                int xy0 = m[xy - w->w] ? xy - w->w : xy;
+                int xy1 = m[xy + w->w] ? xy + w->w : xy;
+                int x0y0 = m[xy0 - 1] ? xy0 - 1 : xy0;
+                int x1y0 = m[xy0 + 1] ? xy0 + 1 : xy0;
+                int x0y1 = m[xy1 - 1] ? xy1 - 1 : xy1;
+                int x1y1 = m[xy1 + 1] ? xy1 + 1 : xy1;
+
+                const float c2 = 100;
+                float sq2 = 1/sqrtf(2);
+                float s = 4*sq2 + 4;
+                float f = c2 * (
+                        sq2 * h[x0y0] + sq2 * h[x0y1] + sq2 * h[x1y1] + sq2 * h[x1y0]
+                        + h[x0y] + h[x1y] + h[xy0] + h[xy1]
+                        - s * h[xy]
+                        ) / s;
+                w->velocity[xy] += f * dt;
+                w->velocity[xy] *= 0.995;
+                w->temp[xy] = h[xy] + w->velocity[xy] * dt;
+
+                int world_xy = (w->y + y) * world_x + (w->x + x);
+                rendering.albedo[world_xy] = {0, 0, clampf(w->temp[xy] + 0.5, 0, 1)};
+            }
         }
-    }
 
-    float* swapped = water.heightmap;
-    water.heightmap = water.temp;
-    water.temp = swapped;
+        float* swapped = w->heightmap;
+        w->heightmap = w->temp;
+        w->temp = swapped;
+    }
 }
 
 float get_time_of_day() {
@@ -295,36 +327,6 @@ RGBA texture_sample(Image* t, Vec2 p) {
     return t->data[y * t->w + x];
 }
 
-// void render_ground() {
-//     float max_distance = sqrt(world_x * world_y);
-//     for (int y = 0; y < world_y; ++y)
-//         for (int x = 0; x < world_x; ++x) {
-//             Vec2 p = {(float)x, (float)y};
-
-//             float weights = 0;
-//             RGBA c;
-//             for (int i = 0; i < n_ground_sample; ++i) {
-//                 GroundSample g = ground_sample[i];
-//                 float distance = vec2_norm(p - g.p);
-//                 RGBA sample = texture_sample(&texture[g.type], {(float)x, (float)y});
-//                 if (distance == 0) {
-//                     c = sample;
-//                     weights = 0;
-//                     break;
-//                 } else {
-//                     float w = 1.f / powf(distance / max_distance, 8);
-//                     weights += w;
-//                     c = c + w * sample;
-//                 }
-//             }
-//             if (weights > 0) {
-//                 c = c / weights;
-//             }
-
-//             ground_sprite.data[y * ground_sprite.w + x] = c;
-//         }
-// }
-
 void make_ground() {
     int n_ground_sample = 0;
     GroundSample ground_sample[128];
@@ -335,7 +337,7 @@ void make_ground() {
 
     float *weights = (float*)malloc(n_ground_sample * sizeof(float));
 
-    ground.mat = (GroundType*)malloc(world_x*world_y*(sizeof ground.mat));
+    ground.mat = (GroundType*)malloc(world_size*sizeof(GroundType));
 
     float max_distance = sqrt(world_x * world_y);
     for (int y = 0; y < world_y; ++y)
@@ -369,10 +371,12 @@ void make_ground() {
 
             ground.mat[y * world_x + x] = ground_sample[chosen_sample].type;
         }
+
+    free(weights);
 }
 
 void draw_material_pass() {
-    for (int i = 0; i < world_x*world_y; ++i) {
+    for (int i = 0; i < world_size; ++i) {
         GroundType mat = ground.mat[i];
 
         if (mat != DIRT && mat != GRASS) continue;
@@ -397,18 +401,17 @@ void world_init() {
     camera.res_x = gfx_width();
     camera.res_y = gfx_height();
 
+    sun.angle = M_PI / 2.f;
+
     texture[GRASS] = texture_grass_create();
     texture[DIRT] = texture_dirt_create();
 
+    rendering.normal = (Vec3*)malloc(world_size*sizeof(Vec3));
+    rendering.albedo = (Vec3*)malloc(world_size*sizeof(Vec3));
     make_ground();
-
-    sun.angle = M_PI / 2.f;
-
-    water_init(50, 50);
-
-    rendering.normal = (Vec3*)malloc(world_x*world_y*(sizeof rendering.normal));
-    rendering.albedo = (Vec3*)malloc(world_x*world_y*(sizeof rendering.albedo));
+    water_add(20, 20, 50, 50);
     draw_material_pass();
+
 }
 
 void resolve_collision(int a, int b) {
@@ -558,9 +561,41 @@ bool is_occluded(Vec3 light_pos, Vec3 point_pos) {
     return false;
 }
 
+// void render_ground() {
+//     Vec3 ambient_light = vec3_scale({1, 1, 1}, 0.1);
+//     Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
+//     RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_angle(sun.angle));
+//     Vec3 sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b};
+//     Vec3 sun_pos_3d = vec3_scale(sun_vec, 1000);
+//     for (int y = 0; y < world_y; ++y)
+//         for (int x = 0; x < world_x; ++x) {
+//             Vec2 world_pos = {(float)x, (float)y};
+
+//             Vec3 illumination = ambient_light;
+//             illumination = vec3_add(illumination, torch_light(world_pos));
+
+//             int xy = (int)world_pos.y * world_x + (int)world_pos.x;
+//             Vec3 normal = rendering.normal[xy];
+//             Vec3 point_3d = {world_pos.x, world_pos.y, 0};
+//             if (!is_occluded(sun_pos_3d, point_3d)) {
+//                 float diffuse = fmax(0, vec3_dot(normal, sun_vec));
+//                 Vec3 sun_light = vec3_scale(sun_color, diffuse);
+//                 illumination = vec3_add(illumination, sun_light);
+//             }
+
+//             Vec3 albedo = rendering.albedo[xy];
+//             Vec3 shaded = vec3_mul(illumination, albedo);
+
+//             image_set(&ground_sprite, x, y, rgba_clamp({shaded.x, shaded.y, shaded.z, 1}));
+//         }
+// }
+
 void world_draw() {
     Affine t = camera.view_transform();
     Affine ti = inverse(t);
+    
+    // render_ground();
+    // gfx_draw_sprite(&ground_sprite, t, false);
 
     Vec3 ambient_light = vec3_scale({1, 1, 1}, 0.1);
     Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
@@ -580,6 +615,7 @@ void world_draw() {
 
             int xy = (int)world_pos.y * world_x + (int)world_pos.x;
             Vec3 normal = rendering.normal[xy];
+            // vec3_print("normal", normal);
             Vec3 point_3d = {world_pos.x, world_pos.y, 0};
             if (!is_occluded(sun_pos_3d, point_3d)) {
                 float diffuse = fmax(0, vec3_dot(normal, sun_vec));
