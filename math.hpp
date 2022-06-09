@@ -42,6 +42,10 @@ inline Vec3 vec3_sub(Vec3 a, Vec3 b) {
     return {a.x-b.x, a.y-b.y, a.z-b.z};
 }
 
+inline Vec3 vec3_add(Vec3 a, Vec3 b) {
+    return {a.x+b.x, a.y+b.y, a.z+b.z};
+}
+
 inline Vec2 operator-(Vec2 a, float b) {
     return Vec2{a.x-b, a.y-b};
 }
@@ -68,6 +72,10 @@ inline float vec3_dot(Vec3 a, Vec3 b) {
 
 inline Vec3 vec3_scale(Vec3 v, float s) {
     return {v.x * s, v.y * s, v.z * s};
+}
+
+inline Vec3 vec3_mul(Vec3 a, Vec3 b) {
+    return {a.x*b.x, a.y*b.y, a.z*b.z};
 }
 
 inline Vec2 operator/(Vec2 v, float d) {
@@ -133,7 +141,6 @@ inline Vec2 rotate(Vec2 v, float rad) {
 //     int y = x % m;
 //     if (y < 0) return y + m;
 //     return y;
-// }
 
 
 // struct DistanceResult {
@@ -215,8 +222,12 @@ inline Affine affine_eye() {
     return {};
 }
 
-inline Affine from_translation(Vec2 v) {
+inline Affine affine_from_translation(Vec2 v) {
     return {.t = v};
+}
+
+inline Affine from_translation(Vec2 v) {
+    return affine_from_translation(v);
 }
 
 inline Affine from_rotation(float rad) {
@@ -314,6 +325,12 @@ inline Affine inverse(Affine a) {
 
 inline float clampf(float x, float a, float b) {
     return fminf(b, fmaxf(a, x));
+}
+
+inline int clampi(int x, int a, int b) {
+    if (x > b) return b;
+    if (x < a) return a;
+    return x;
 }
 
 #endif /* MATH_HPP */
