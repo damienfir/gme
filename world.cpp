@@ -41,6 +41,7 @@ struct Controls {
 };
 
 enum GroundType {
+    NONE,
     GRASS,
     DIRT,
     WATER,
@@ -107,6 +108,9 @@ Ground ground;
 RenderingBuffer rendering;
 Image ground_sprite;
 Water water[10];
+const int max_ground_sample = 128;
+int n_ground_sample = 0;
+GroundSample ground_sample[max_ground_sample];
 
 void water_add(int x, int y, int width, int height) {
     int id = 0;
@@ -200,7 +204,7 @@ void water_update(float dt) {
                         - s * h[xy]
                         ) / s;
                 w->velocity[xy] += f * dt;
-                w->velocity[xy] *= 0.995;
+                w->velocity[xy] *= 0.998;
                 w->temp[xy] = h[xy] + w->velocity[xy] * dt;
 
                 int world_xy = (w->y + y) * world_x + (w->x + x);
@@ -214,6 +218,22 @@ void water_update(float dt) {
         float* swapped = w->heightmap;
         w->heightmap = w->temp;
         w->temp = swapped;
+    }
+}
+
+void water_touch(Vec2 pos) {
+    int x = (int)pos.x;
+    int y = (int)pos.y;
+
+    for (int i = 0; i < 10; ++i) {
+        if (water[i].h == 0) continue;
+
+        Water w = water[i];
+        if (x >= w.x && x < w.x + w.w && y >= w.y && y < w.y + w.h) {
+            int water_xy = (y - w.y) * w.w + (x - w.x);
+            w.heightmap[water_xy] = 3;
+            break;
+        }
     }
 }
 
@@ -331,25 +351,20 @@ RGBA texture_sample(Image* t, Vec2 p) {
 }
 
 void make_ground() {
-    int n_ground_sample = 0;
-    GroundSample ground_sample[128];
-    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {50, 50}};
-    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {40, 60}};
-    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {30, 70}};
-    ground_sample[n_ground_sample++] = {.type = DIRT, .p = {180, 180}};
+    int n = n_ground_sample;
 
-    float *weights = (float*)malloc(n_ground_sample * sizeof(float));
-
-    ground.mat = (GroundType*)malloc(world_size*sizeof(GroundType));
+    float *weights = (float*)malloc(n * sizeof(float));
 
     float max_distance = sqrt(world_x * world_y);
     for (int y = 0; y < world_y; ++y)
         for (int x = 0; x < world_x; ++x) {
+            int world_xy = y * world_x + x;
+
             Vec2 p = {(float)x, (float)y};
 
             bool exact_match = false;
             float total_weight = 0;
-            for (int i = 0; i < n_ground_sample; ++i) {
+            for (int i = 0; i < n; ++i) {
                 GroundSample g = ground_sample[i];
                 float distance = vec2_norm(p - g.p);
 
@@ -367,12 +382,12 @@ void make_ground() {
             if (exact_match) continue;
 
             float r = randf() * total_weight;
-            int chosen_sample = n_ground_sample-1;
-            for (int i = 1; i < n_ground_sample; ++i) {
+            int chosen_sample = n-1;
+            for (int i = 1; i < n; ++i) {
                 if (r < weights[i]) chosen_sample = i-1;
             }
 
-            ground.mat[y * world_x + x] = ground_sample[chosen_sample].type;
+            ground.mat[world_xy] = ground_sample[chosen_sample].type;
         }
 
     free(weights);
@@ -390,6 +405,24 @@ void draw_material_pass() {
         rendering.normal[i] = {0, 0, 1};
         rendering.albedo[i] = {color.r, color.g, color.b};
     }
+}
+
+void make_default_ground() {
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {50, 50}};
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {40, 60}};
+    ground_sample[n_ground_sample++] = {.type = GRASS, .p = {30, 70}};
+    ground_sample[n_ground_sample++] = {.type = DIRT, .p = {180, 180}};
+    make_ground();
+    draw_material_pass();
+}
+
+void ground_add_more(Vec2 p) {
+    int x = (int)p.x;
+    int y = (int)p.y;
+    GroundType target = ground.mat[y * world_x + x];
+    ground_sample[n_ground_sample++] = {.type = target, .p = p};
+    make_ground();
+    draw_material_pass();
 }
 
 void world_init() {
@@ -411,9 +444,9 @@ void world_init() {
 
     rendering.normal = (Vec3*)malloc(world_size*sizeof(Vec3));
     rendering.albedo = (Vec3*)malloc(world_size*sizeof(Vec3));
-    make_ground();
+    ground.mat = (GroundType*)malloc(world_size*sizeof(GroundType));
+    make_default_ground();
     water_add(20, 20, 50, 50);
-    draw_material_pass();
 }
 
 void resolve_collision(int a, int b) {
@@ -463,14 +496,22 @@ void world_update(float dt) {
         vel = normalize(vel) * speed;
     }
 
+    Vec2 p = position[controlling] + vel * dt;
+
+    int world_xy = (int)p.y * world_x + (int)p.x;
+    if (ground.mat[world_xy] == WATER) {
+        p = position[controlling];
+    }
+
     velocity[controlling] = vel;
-    position[controlling] = position[controlling] + velocity[controlling] * dt;
+    position[controlling] = p; // position[controlling] + velocity[controlling] * dt;
 
     for (int id_a = 0; id_a < n_ids; ++id_a) {
         for (int id_b = id_a + 1; id_b < n_ids; ++id_b) {
             resolve_collision(id_a, id_b);
         }
     }
+
 
     camera.position = position[controlling] - Vec2{camera.size_x / 2, camera.size_y / 2};
 
@@ -632,45 +673,6 @@ void world_draw() {
         }
 }
 
-// void world_draw2() {
-//     Affine t = camera.view_transform();
-//     Affine ti = inverse(t);
-//     gfx_draw_sprite(&ground_sprite, t, false);
-
-//     for (int id = 0; id < n_ids; ++id) {
-//         Shape s = shape[id];
-//         switch (s.type) {
-//             case CIRCLE: gfx_draw_point(multiply_affine_vec2(t, position[id]), s.color, camera.to_viewport(s.radius));
-//         }
-//     }
-
-//     RGBA ambient_light = 0.1 * RGBA{1, 1, 1, 1};
-//     Vec3 normal = {0, 0, 1};
-//     Vec3 sun_vec = {cos(sun.angle), 0, sin(sun.angle)};
-//     RGB sun_color_rgb = kelvin_to_color(sun_temperature_from_angle(sun.angle));
-//     RGBA sun_color = {sun_color_rgb.r, sun_color_rgb.g, sun_color_rgb.b, 1};
-//     Vec3 sun_pos_3d = vec3_scale(sun_vec, 1000);
-//     for (int y = 0; y < camera.res_y; ++y)
-//         for (int x = 0; x < camera.res_x; ++x) {
-//             Vec2 world_pos = multiply_affine_vec2(ti, {(float)x, (float)y});
-
-//             RGBA illumination = ambient_light;
-
-//             illumination = rgba_add(illumination, torch_light(world_pos));
-
-//             Vec3 point_3d = {world_pos.x, world_pos.y, 0};
-//             if (!is_occluded(sun_pos_3d, point_3d, x, y)) {
-//                 float diffuse = fmax(0, vec3_dot(normal, sun_vec));
-//                 RGBA sun_light = diffuse * sun_color;
-//                 illumination = rgba_add(illumination, sun_light);
-//             }
-
-//             RGBA color = gfx_get(x, y);
-//             RGBA shaded = illumination * color;
-//             gfx_set(x, y, rgba_clamp(shaded));
-//         }
-// }
-
 void world_key_input(int action, int key) {
     if (action == GLFW_PRESS) {
         switch (key) {
@@ -694,7 +696,20 @@ void world_mouse_cursor_position(float xpos, float ypos) {
     controls.mouse = {xpos * camera.res_x, ypos * camera.res_y};
 }
 
-void world_mouse_button(int button, int action) {}
+void world_mouse_button(int button, int action) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+        Affine t = inverse(camera.view_transform());
+        Vec2 p = multiply_affine_vec2(t, controls.mouse);
+
+        int world_xy = (int)p.y * world_x + (int)p.x;
+        if (ground.mat[world_xy] == WATER) {
+            water_touch(p);
+        } else {
+            printf("ok\n");
+            ground_add_more(p);
+        }
+    }
+}
 
 void world_scroll_input(float xoffset, float yoffset) {
     float delta = -yoffset * 20;
