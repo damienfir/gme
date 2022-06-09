@@ -204,7 +204,10 @@ void water_update(float dt) {
                 w->temp[xy] = h[xy] + w->velocity[xy] * dt;
 
                 int world_xy = (w->y + y) * world_x + (w->x + x);
-                rendering.albedo[world_xy] = {0, 0, clampf(w->temp[xy] + 0.5, 0, 1)};
+                float nx = (h[x1y] - h[x0y]) / 2;
+                float ny = (h[xy1] - h[xy0]) / 2;
+                Vec3 normal = vec3_normalize({nx, ny, 1});
+                rendering.normal[world_xy] = normal;
             }
         }
 
@@ -411,7 +414,6 @@ void world_init() {
     make_ground();
     water_add(20, 20, 50, 50);
     draw_material_pass();
-
 }
 
 void resolve_collision(int a, int b) {
