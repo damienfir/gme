@@ -100,6 +100,10 @@ struct Image {
 Image image_create(int w, int h);
 void image_set(Image*, int x, int y, RGBA);
 RGBA image_get(Image*, int x, int y);
+void image_multiply_scalar(Image*, float value);
+bool image_in_bounds(Image* im, int x, int y);
+RGBA lookup_nearest(Image* s, Vec2 p);
+RGBA lookup_bilinear(Image* s, Vec2 p);
 
 void gfx_init(int w, int h);
 RGBA gfx_get(int x, int y);
@@ -111,5 +115,6 @@ void gfx_draw_line(Vec2 a, Vec2 b, RGBA color, float thickness);
 void gfx_draw_point(Vec2 pos, RGBA color, float radius);
 void gfx_draw_rectangle(Vec2 tl, Vec2 br, RGBA color);
 void gfx_draw_sprite(Image* s, Affine t, bool bilinear);
+
 
 #endif /* GFX_HPP */

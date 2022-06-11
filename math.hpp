@@ -42,6 +42,10 @@ inline Vec3 vec3_sub(Vec3 a, Vec3 b) {
     return {a.x-b.x, a.y-b.y, a.z-b.z};
 }
 
+inline Vec2 vec2_add(Vec2 a, Vec2 b) {
+    return {a.x+b.x, a.y+b.y};
+}
+
 inline Vec3 vec3_add(Vec3 a, Vec3 b) {
     return {a.x+b.x, a.y+b.y, a.z+b.z};
 }
@@ -68,6 +72,10 @@ inline float vec2_dot(Vec2 a, Vec2 b) {
 
 inline float vec3_dot(Vec3 a, Vec3 b) {
     return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+inline Vec2 vec2_scale(Vec2 v, float s) {
+    return {v.x * s, v.y * s};
 }
 
 inline Vec3 vec3_scale(Vec3 v, float s) {

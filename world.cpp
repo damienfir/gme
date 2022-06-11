@@ -705,8 +705,7 @@ void world_mouse_button(int button, int action) {
         if (ground.mat[world_xy] == WATER) {
             water_touch(p);
         } else {
-            printf("ok\n");
-            ground_add_more(p);
+            // ground_add_more(p);
         }
     }
 }

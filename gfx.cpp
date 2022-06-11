@@ -20,6 +20,12 @@ RGBA image_get(Image* im, int x, int y) {
     return im->data[y * im->w + x];
 }
 
+void image_multiply_scalar(Image* im, float value) {
+    for (int i = 0; i < im->w*im->h; ++i) {
+        im->data[i] = value * im->data[i];
+    }
+}
+
 void gfx_init(int w, int h) {
     image = image_create(w, h);
 }
@@ -38,6 +44,10 @@ int gfx_width() {
 
 int gfx_height() {
     return image.h;
+}
+
+bool image_in_bounds(Image* im, int x, int y) {
+    return x >= 0 and y >= 0 and x < im->w and y < im->h;
 }
 
 bool in_buffer(int x, int y) {
@@ -139,7 +149,7 @@ void gfx_draw_rectangle(Vec2 tl, Vec2 br, RGBA color) {
         }
 }
 
-inline RGBA lookup_bilinear(Image* s, Vec2 p) {
+RGBA lookup_bilinear(Image* s, Vec2 p) {
     int x0 = p.x;
     int y0 = p.y;
     float fx = p.x - (float)x0;
@@ -151,7 +161,7 @@ inline RGBA lookup_bilinear(Image* s, Vec2 p) {
     return (1 - fx) * ((1 - fy) * tl + fy * bl) + fx * ((1 - fy) * tr + fy * br);
 }
 
-inline RGBA lookup_nearest(Image* s, Vec2 p) {
+RGBA lookup_nearest(Image* s, Vec2 p) {
     int x = floor(p.x);
     int y = floor(p.y);
     if (x < 0 || y < 0 || x >= s->w || y >= s->h)
