@@ -1,8 +1,12 @@
 #include <GLFW/glfw3.h>
 #include <stdio.h>
+#include <GL/glu.h>
+#include <chrono>
+#include <cstdlib>
 
-#include "gfx.hpp"
-#include "image.hpp"
+// #include "gfx.hpp"
+#include "img.h"
+#include "png.hpp"
 #include "math.hpp"
 #include "utility.hpp"
 
@@ -71,7 +75,7 @@ struct Tilemap {
     GridPosition grid[max_items];
     ItemType types[max_items];
     Portals portals[max_items];
-    Sprite sprites[20];
+    Img sprites[20];
     Affine transforms[max_items];
     int buttons[max_items];  // Stores the controlled tunnel_id
 
@@ -103,6 +107,8 @@ Tilemap tm;
 int player_id;
 bool editor_mode = true;
 Editor editor;
+int texture_width = 512;
+int texture_height = 512;
 
 bool is_empty(GridPosition p) {
     for (int id = 0; id < tm.max_id; ++id) {
@@ -237,11 +243,8 @@ struct Crop {
     int h;
 };
 
-Sprite sprite_from_png(PngImage im, Crop roi) {
-    Sprite s;
-    s.w = roi.w;
-    s.h = roi.h;
-    s.data = (RGBA*)malloc(s.w * s.h * sizeof(RGBA));
+Img sprite_from_png(PngImage im, Crop roi) {
+    Img s = img_create(roi.w, roi.h);
 
     for (int crop_y = roi.y; crop_y < roi.y + roi.w; ++crop_y)
         for (int crop_x = roi.x; crop_x < roi.x + roi.w; ++crop_x) {
@@ -252,13 +255,14 @@ Sprite sprite_from_png(PngImage im, Crop roi) {
             c.a = im.data[crop_y * im.width * 4 + crop_x * 4 + 3];
             int sprite_x = crop_x - roi.x;
             int sprite_y = crop_y - roi.y;
-            s.data[sprite_y * roi.w + sprite_x] = c;
+            img_set(&s, sprite_x, sprite_y, c);
+            // s.data[sprite_y * roi.w + sprite_x] = c;
         }
 
     return s;
 }
 
-Sprite load_player_sprite() {
+Img load_player_sprite() {
     return sprite_from_png(read_png("resources/sprites.png"), Crop{.x = 0, .y = 0, .w = 16, .h = 16});
 }
 
@@ -269,7 +273,7 @@ void add_player() {
 }
 
 GridPosition editor_mouse_position() {
-    float ratio = gfx_width() / tile_size;
+    float ratio = texture_width / tile_size;
     int x = editor.mouse.x * ratio;
     int y = editor.mouse.y * ratio;
     return {x, y};
@@ -324,7 +328,7 @@ void editor_stop_dragging() {
 }
 
 int editor_selected_face() {
-    float ratio = gfx_width() / tile_size;
+    float ratio = texture_width / tile_size;
     float x = editor.mouse.x * ratio;
     float y = editor.mouse.y * ratio;
     x = x - floor(x);
@@ -378,31 +382,19 @@ void portal2d_init() {
 
     add_player();
 
-    tm.sprites[FLOOR].w = 1;
-    tm.sprites[FLOOR].h = 1;
-    static RGBA floor_c[] = {
-        {0.6, 0.6, 0.6, 1},
-    };
-    tm.sprites[FLOOR].data = floor_c;
+    tm.sprites[FLOOR] = img_create(1,1);
+    img_set(&tm.sprites[FLOOR], 1, 1, {0.6, 0.6, 0.6, 1});
 
-    tm.sprites[BLOCK].w = 1;
-    tm.sprites[BLOCK].h = 1;
-    static RGBA block_c[] = {
-        {0.4, 0.4, 0.4, 1},
-    };
-    tm.sprites[BLOCK].data = block_c;
+    tm.sprites[BLOCK] = img_create(1, 1);
+    img_set(&tm.sprites[BLOCK], 1, 1, {0.4, 0.4, 0.4, 1});
 
-    tm.sprites[BUTTON].w = 1;
-    tm.sprites[BUTTON].h = 1;
-    static RGBA button_c[] = {
-        {1, 1, 1, 1},
-    };
-    tm.sprites[BUTTON].data = button_c;
+    tm.sprites[BUTTON] = img_create(1, 1);
+    img_set(&tm.sprites[BUTTON], 1, 1, {1, 1, 1, 1});
 
     tm.sprites[PLAYER] = load_player_sprite();
 }
 
-void portal2d_key_input(int action, int key) {
+void portal2d_key_input(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
         switch (key) {
             case GLFW_KEY_UP: move_player({0, -1}); break;
@@ -428,7 +420,7 @@ void portal2d_key_input(int action, int key) {
     }
 }
 
-void portal2d_mouse_cursor_position(float xpos, float ypos) {
+static void portal2d_mouse_cursor_position(GLFWwindow* window, double xpos, double ypos) {
     if (editor_mode) {
         editor.mouse.x = xpos;
         editor.mouse.y = ypos;
@@ -436,7 +428,7 @@ void portal2d_mouse_cursor_position(float xpos, float ypos) {
     }
 }
 
-void portal2d_mouse_button(int button, int action) {
+void portal2d_mouse_button(GLFWwindow* window, int button, int action, int mods) {
     if (!editor_mode)
         return;
 
@@ -455,7 +447,7 @@ void portal2d_update(float dt) {
     // update animations
 }
 
-void portal2d_draw() {
+void portal2d_draw(Img *gfx) {
     int n_ids = 0;
     int ordered_ids[max_items];
     for (int id = 0; id < tm.max_id; ++id) {
@@ -491,29 +483,163 @@ void portal2d_draw() {
         }
 
         auto view_model = mul(affine_eye(), model_transform);
-        gfx_draw_sprite(tm.sprites[type], view_model, false);
+        img_draw_img(gfx, &tm.sprites[type], view_model, false);
 
         if (type == BLOCK) {
             if (int tid = tm.portals[id].tunnel[0]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}),
+                img_draw_line(gfx, multiply_affine_vec2(view_model, {0, 0}), multiply_affine_vec2(view_model, {1, 0}),
                               tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[1]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {1, 0}), multiply_affine_vec2(view_model, {1, 1}),
+                img_draw_line(gfx, multiply_affine_vec2(view_model, {1, 0}), multiply_affine_vec2(view_model, {1, 1}),
                               tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[2]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {1, 1}), multiply_affine_vec2(view_model, {0, 1}),
+                img_draw_line(gfx, multiply_affine_vec2(view_model, {1, 1}), multiply_affine_vec2(view_model, {0, 1}),
                               tunnel_colors[tid], 3);
             }
             if (int tid = tm.portals[id].tunnel[3]; tid >= 0) {
-                gfx_draw_line(multiply_affine_vec2(view_model, {0, 1}), multiply_affine_vec2(view_model, {0, 0}),
+                img_draw_line(gfx, multiply_affine_vec2(view_model, {0, 1}), multiply_affine_vec2(view_model, {0, 0}),
                               tunnel_colors[tid], 3);
             }
         }
     }
 
     if (editor_mode) {
-        gfx_draw_point({10, 10}, {1, 0, 0, 1}, 5);
+        img_draw_point(gfx, {10, 10}, {1, 0, 0, 1}, 5);
     }
+}
+
+
+
+// ----------------------------------------------------------------------------------------
+//                             GAME INDEPENDENT STUFF
+// ----------------------------------------------------------------------------------------
+
+struct Timer {
+    std::chrono::time_point<std::chrono::high_resolution_clock> previous_timestamp;
+
+    void start() { previous_timestamp = std::chrono::high_resolution_clock::now(); }
+
+    float tick() {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
+        previous_timestamp = now;
+        // if (ms > 0) {
+        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
+        // }
+        return ms / 1000.f;
+    }
+
+    //     void sync(int ms) {
+    //         auto now = std::chrono::high_resolution_clock::now();
+    //         auto elapsed = now - previous_timestamp;
+    //         if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
+    //             std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
+    //         }
+    //         previous_timestamp = now;
+    //     }
+};
+
+struct Texture {
+    GLuint id;
+    int w;
+    int h;
+    unsigned char* data;
+};
+
+Texture tex;
+bool running = true;
+
+Texture texture_create(int w, int h) {
+    Texture t;
+    glGenTextures(1, &t.id);
+    glBindTexture(GL_TEXTURE_2D, t.id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    t.w = w;
+    t.h = h;
+    t.data = (unsigned char*)malloc(t.w * t.h * 3 * sizeof(unsigned char));
+    return t;
+}
+
+void texture_draw_from_image(Img* img) {
+    for (int y = 0; y < tex.h; ++y)
+        for (int x = 0; x < tex.w; ++x) {
+            RGBA color = img_get(img, x, y);
+            tex.data[y * tex.w * 3 + x * 3 + 0] = color.r * 255;
+            tex.data[y * tex.w * 3 + x * 3 + 1] = color.g * 255;
+            tex.data[y * tex.w * 3 + x * 3 + 2] = color.b * 255;
+        }
+
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex.w, tex.h, 0, GL_RGB, GL_UNSIGNED_BYTE, tex.data);
+
+    glEnable(GL_TEXTURE_2D);
+
+    glBegin(GL_QUADS);
+    glTexCoord2d(0, 1);
+    glVertex2d(-1, -1);
+    glTexCoord2d(1, 1);
+    glVertex2d(1, -1);
+    glTexCoord2d(1, 0);
+    glVertex2d(1, 1);
+    glTexCoord2d(0, 0);
+    glVertex2d(-1, 1);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
+        running = false;
+    }
+}
+
+const int window_width = 1024;
+const int window_height = 1024;
+
+int main(int argc, char** argv) {
+    std::srand(std::time(0));
+
+    if (!glfwInit()) {
+        printf("Cannot initialize GLFW\n");
+        abort();
+    }
+
+    GLFWwindow* window = glfwCreateWindow(window_width, window_height, "Awesome game", NULL, NULL);
+    if (!window) {
+        printf("Cannot open window\n");
+        abort();
+    }
+
+    glfwMakeContextCurrent(window);
+
+    Timer timer_dt;
+    timer_dt.start();
+
+    glfwSetKeyCallback(window, portal2d_key_input);
+    glfwSetCursorPosCallback(window, portal2d_mouse_cursor_position);
+    glfwSetMouseButtonCallback(window, portal2d_mouse_button);
+    // glfwSetScrollCallback(window, portal2d_mouse_button);
+
+    tex = texture_create(texture_width, texture_height);
+    portal2d_init();
+    Img game_image = img_create(tex.w, tex.h);
+
+    while (running) {
+        float dt = timer_dt.tick();
+        printf("fps: %.2f\n", 1 / dt);
+        portal2d_update(dt);
+
+        img_solid({});
+        portal2d_draw(&game_image);
+        texture_draw_from_image(&game_image);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    return 0;
 }

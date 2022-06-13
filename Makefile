@@ -1,9 +1,13 @@
-all: build/slime
+all: build/portal2d
 
 %.o: %.cpp %.hpp
 	clang -g -std=c++17 -Wall -O -c $< -o $@
 
 build/main: main.o gfx.o world.o math.o
+	mkdir build || true
+	clang -g -lm -lglfw -lGL -lGLU -lGLEW -lpng -lstdc++ $^ -o $@
+
+build/portal2d: portal2d.o gfx.o math.o
 	mkdir build || true
 	clang -g -lm -lglfw -lGL -lGLU -lGLEW -lpng -lstdc++ $^ -o $@
 
