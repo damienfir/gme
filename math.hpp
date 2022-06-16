@@ -1,8 +1,13 @@
 #ifndef MATH_HPP
 #define MATH_HPP
 
-#include <math.h>
 #include <assert.h>
+#include <math.h>
+
+struct Size2D {
+    int w;
+    int h;
+};
 
 struct Mat2 {
     float m00 = 1;
@@ -31,35 +36,35 @@ inline Vec2 operator-(Vec2 a) {
 }
 
 inline Vec2 operator-(Vec2 a, Vec2 b) {
-    return Vec2{a.x-b.x, a.y-b.y};
+    return Vec2{a.x - b.x, a.y - b.y};
 }
 
 inline Vec2 vec2_sub(Vec2 a, Vec2 b) {
-    return Vec2{a.x-b.x, a.y-b.y};
+    return Vec2{a.x - b.x, a.y - b.y};
 }
 
 inline Vec3 vec3_sub(Vec3 a, Vec3 b) {
-    return {a.x-b.x, a.y-b.y, a.z-b.z};
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
 inline Vec2 vec2_add(Vec2 a, Vec2 b) {
-    return {a.x+b.x, a.y+b.y};
+    return {a.x + b.x, a.y + b.y};
 }
 
 inline Vec3 vec3_add(Vec3 a, Vec3 b) {
-    return {a.x+b.x, a.y+b.y, a.z+b.z};
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 inline Vec2 operator-(Vec2 a, float b) {
-    return Vec2{a.x-b, a.y-b};
+    return Vec2{a.x - b, a.y - b};
 }
 
 inline Vec2 operator+(Vec2 a, Vec2 b) {
-    return Vec2{a.x+b.x, a.y+b.y};
+    return Vec2{a.x + b.x, a.y + b.y};
 }
 
 inline Vec2 operator+(Vec2 a, float x) {
-    return Vec2{a.x+x, a.y+x};
+    return Vec2{a.x + x, a.y + x};
 }
 
 inline float dot(Vec2 a, Vec2 b) {
@@ -71,7 +76,7 @@ inline float vec2_dot(Vec2 a, Vec2 b) {
 }
 
 inline float vec3_dot(Vec3 a, Vec3 b) {
-    return a.x*b.x + a.y*b.y + a.z*b.z;
+    return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 inline Vec2 vec2_scale(Vec2 v, float s) {
@@ -83,23 +88,23 @@ inline Vec3 vec3_scale(Vec3 v, float s) {
 }
 
 inline Vec3 vec3_mul(Vec3 a, Vec3 b) {
-    return {a.x*b.x, a.y*b.y, a.z*b.z};
+    return {a.x * b.x, a.y * b.y, a.z * b.z};
 }
 
 inline Vec2 operator/(Vec2 v, float d) {
-    return Vec2{v.x/d, v.y/d};
+    return Vec2{v.x / d, v.y / d};
 }
 
 inline Vec2 vec2_div(Vec2 v, float d) {
-    return Vec2{v.x/d, v.y/d};
+    return Vec2{v.x / d, v.y / d};
 }
 
 inline Vec3 vec3_div(Vec3 v, float d) {
-    return {v.x/d, v.y/d, v.z/d};
+    return {v.x / d, v.y / d, v.z / d};
 }
 
 inline Vec2 operator*(Vec2 v, float d) {
-    return Vec2{v.x*d, v.y*d};
+    return Vec2{v.x * d, v.y * d};
 }
 
 inline Vec2 operator*(float d, Vec2 v) {
@@ -107,11 +112,11 @@ inline Vec2 operator*(float d, Vec2 v) {
 }
 
 inline float vec2_norm(Vec2 v) {
-    return sqrtf(v.x*v.x + v.y*v.y);
+    return sqrtf(v.x * v.x + v.y * v.y);
 }
 
 inline float vec3_norm(Vec3 v) {
-    return sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
+    return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
 inline float norm(Vec2 v) {
@@ -135,7 +140,7 @@ inline Vec3 vec3_project_onto(Vec3 a, Vec3 b) {
 }
 
 inline float vec3_pnorm(float p, Vec3 v) {
-    return powf(powf(fabs(v.x), p) + powf(fabs(v.y), p) + powf(fabs(v.z), p), 1/p);
+    return powf(powf(fabs(v.x), p) + powf(fabs(v.y), p) + powf(fabs(v.z), p), 1 / p);
 }
 
 inline Vec2 rotate(Vec2 v, float rad) {
@@ -149,7 +154,6 @@ inline Vec2 rotate(Vec2 v, float rad) {
 //     int y = x % m;
 //     if (y < 0) return y + m;
 //     return y;
-
 
 // struct DistanceResult {
 //     float distance;
@@ -190,7 +194,7 @@ inline Vec2 rotate(Vec2 v, float rad) {
 //     Vec2 perp = Vec2{BA.y, -BA.x};
 //     float dist_prev = dot((pos_prev - line_a), perp);
 //     float dist_next = dot(PA, perp);
-//     if ((dist_prev > 0 && dist_next <= 0) || 
+//     if ((dist_prev > 0 && dist_next <= 0) ||
 //             (dist_prev < 0 && dist_next >= 0)) {
 //         return true;
 //     }
@@ -283,10 +287,10 @@ inline Vec2 multiply_affine_vec2(Affine a, Vec2 v) {
 
 inline Mat2 mul(Mat2 a, Mat2 b) {
     Mat2 c;
-    c.m00 = a.m00*b.m00 + a.m01*b.m10;
-    c.m01 = a.m00*b.m01 + a.m01*b.m11;
-    c.m10 = a.m10*b.m00 + a.m11*b.m10;
-    c.m11 = a.m10*b.m01 + a.m11*b.m11;
+    c.m00 = a.m00 * b.m00 + a.m01 * b.m10;
+    c.m01 = a.m00 * b.m01 + a.m01 * b.m11;
+    c.m10 = a.m10 * b.m00 + a.m11 * b.m10;
+    c.m11 = a.m10 * b.m01 + a.m11 * b.m11;
     return c;
 }
 
@@ -316,7 +320,7 @@ inline Affine multiply_affine(Affine a, Affine b) {
 
 inline Mat2 inverse(Mat2 a) {
     Mat2 b;
-    float det = a.m00*a.m11 - a.m10*a.m01;
+    float det = a.m00 * a.m11 - a.m10 * a.m01;
     b.m00 = a.m11 / det;
     b.m01 = -a.m01 / det;
     b.m10 = -a.m10 / det;
@@ -335,9 +339,19 @@ inline float clampf(float x, float a, float b) {
     return fminf(b, fmaxf(a, x));
 }
 
+inline Vec3 vec3_clamp(Vec3 v, float a, float b) {
+    return {
+        .x = fminf(b, fmaxf(a, v.x)),
+        .y = fminf(b, fmaxf(a, v.y)),
+        .z = fminf(b, fmaxf(a, v.z)),
+    };
+}
+
 inline int clampi(int x, int a, int b) {
-    if (x > b) return b;
-    if (x < a) return a;
+    if (x > b)
+        return b;
+    if (x < a)
+        return a;
     return x;
 }
 

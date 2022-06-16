@@ -29,6 +29,23 @@ struct Timer {
     //     }
 };
 
+struct Period {
+    int period_ms = 1000;
+    int ms_accumulated = 0;
+
+    bool passed(float delta_seconds) {
+        ms_accumulated += delta_seconds * 1000;
+        if (ms_accumulated > period_ms) {
+            ms_accumulated = 0;
+            return true;
+        }
+        return false;
+    }
+};
+
+Period period_every_hour() {
+    return {.period_ms = 3600 * 1000};
+}
 
 inline void print_vec(const char* name, Vec2 v) {
     printf("%s: %.2f, %.2f\n", name, v.x, v.y);

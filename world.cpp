@@ -583,4 +583,3 @@ void world_scroll_input(float xoffset, float yoffset) {
 }
 
 
-// NEXT:
