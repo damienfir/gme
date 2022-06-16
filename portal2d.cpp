@@ -1,11 +1,9 @@
 #include <GLFW/glfw3.h>
 #include <stdio.h>
 #include <GL/glu.h>
-#include <chrono>
 #include <cstdlib>
 
-// #include "gfx.hpp"
-#include "img.h"
+#include "gfx.hpp"
 #include "png.hpp"
 #include "math.hpp"
 #include "utility.hpp"
@@ -47,7 +45,6 @@ struct Portals {
 
 const int max_items = 128;
 const int tile_size = 100;
-const float tile_sizef = 100;
 
 int move_to_face(Move m) {
     assert(m.x != 0 || m.y != 0);
@@ -89,7 +86,7 @@ struct Tilemap {
 
     int add_grid_entity(ItemType type, int x, int y) {
         int id = new_id();
-        transforms[id] = multiply_affine(from_scale(tile_sizef), from_translation({(float)x, (float)y}));
+        transforms[id] = multiply_affine(from_scale(tile_size), from_translation({(float)x, (float)y}));
         grid[id] = {x, y};
         types[id] = type;
         return id;
@@ -98,17 +95,8 @@ struct Tilemap {
     void remove(int id) { types[id] = EMPTY; }
 };
 
-struct Editor {
-    Vec2 mouse;
-    int selected = -1;
-};
-
 Tilemap tm;
 int player_id;
-bool editor_mode = true;
-Editor editor;
-int texture_width = 512;
-int texture_height = 512;
 
 bool is_empty(GridPosition p) {
     for (int id = 0; id < tm.max_id; ++id) {
@@ -256,7 +244,6 @@ Img sprite_from_png(PngImage im, Crop roi) {
             int sprite_x = crop_x - roi.x;
             int sprite_y = crop_y - roi.y;
             img_set(&s, sprite_x, sprite_y, c);
-            // s.data[sprite_y * roi.w + sprite_x] = c;
         }
 
     return s;
@@ -266,185 +253,73 @@ Img load_player_sprite() {
     return sprite_from_png(read_png("resources/sprites.png"), Crop{.x = 0, .y = 0, .w = 16, .h = 16});
 }
 
-void add_player() {
-    int id = tm.add_grid_entity(PLAYER, 0, 0);
+void add_player(int x, int y) {
+    int id = tm.add_grid_entity(PLAYER, x, y);
     player_id = id;
     tm.transforms[id] = mul(tm.transforms[id], from_scale(0.05));
 }
 
-GridPosition editor_mouse_position() {
-    float ratio = texture_width / tile_size;
-    int x = editor.mouse.x * ratio;
-    int y = editor.mouse.y * ratio;
-    return {x, y};
-}
-
-bool can_place_here(ItemType type, GridPosition p) {
-    if (is_empty(p) and type != FLOOR)
-        return false;
-    return true;
-}
-
-void editor_place_item(ItemType type) {
-    GridPosition p = editor_mouse_position();
-
-    if (!can_place_here(type, p))
-        return;
-    tm.add_grid_entity(type, p.x, p.y);
-}
-
-void editor_remove_item() {
-    GridPosition p = editor_mouse_position();
-    if (MaybeId block = item_at(p); block.valid) {
-        tm.remove(block.id);
-        return;
-    }
-
-    if (MaybeId floor = at(FLOOR, p); floor.valid) {
-        tm.remove(floor.id);
-        return;
-    }
-}
-
-void editor_start_dragging() {
-    GridPosition p = editor_mouse_position();
-    if (MaybeId item = item_at(p); item.valid) {
-        editor.selected = item.id;
-    }
-}
-
-void editor_while_dragging() {
-    if (editor.selected < 0)
-        return;
-
-    GridPosition p = editor_mouse_position();
-    if (!can_place_here(tm.types[editor.selected], p))
-        return;
-    set_item_position(editor.selected, p);
-}
-
-void editor_stop_dragging() {
-    editor.selected = -1;
-}
-
-int editor_selected_face() {
-    float ratio = texture_width / tile_size;
-    float x = editor.mouse.x * ratio;
-    float y = editor.mouse.y * ratio;
-    x = x - floor(x);
-    y = y - floor(y);
-    bool bottomleft = x < y;
-    bool topleft = 1 - y > x;
-
-    if (topleft && !bottomleft)
-        return 0;
-    if (!topleft && !bottomleft)
-        return 1;
-    if (!topleft && bottomleft)
-        return 2;
-    if (topleft && bottomleft)
-        return 3;
-}
-
-void editor_set_portal(int tunnel_id) {
-    GridPosition p = editor_mouse_position();
-
-    if (MaybeId item = item_at(p); item.valid) {
-        if (tm.types[item.id] == BLOCK) {
-            int face = editor_selected_face();
-            printf("adding to face: %d\n", face);
-            tm.portals[item.id].tunnel[face] = tunnel_id;
-        } else if (tm.types[item.id] == BUTTON) {
-            tm.buttons[item.id] = tunnel_id;
-        }
-    }
-}
-
-void portal2d_init() {
+void test_level() {
     for (int y = 0; y < 10; ++y)
         for (int x = 0; x < 10; ++x) {
             tm.add_grid_entity(FLOOR, x, y);
         }
 
-    // tm.add_grid_entity(WALL, 5, 5);
-    // tm.add_grid_entity(WALL, 2, 5);
+    int block1 = tm.add_grid_entity(BLOCK, 3, 1);
+    tm.portals[block1].tunnel[1] = 1;
+    tm.portals[block1].tunnel[2] = 1;
 
-    // int block1 = tm.add_grid_entity(BLOCK, 3, 1);
-    // tm.portals[block1].tunnel[1] = 1;
-    // tm.portals[block1].tunnel[2] = 1;
+    int block2 = tm.add_grid_entity(BLOCK, 4, 2);
+    tm.portals[block2].tunnel[0] = 0;
+    tm.portals[block2].tunnel[3] = 0;
 
-    // int block2 = tm.add_grid_entity(BLOCK, 4, 2);
-    // tm.portals[block2].tunnel[0] = 0;
-    // tm.portals[block2].tunnel[3] = 0;
 
     int button1 = tm.add_grid_entity(BUTTON, 3, 3);
     tm.buttons[button1] = 0;
 
-    add_player();
-
-    tm.sprites[FLOOR] = img_create(1,1);
-    img_set(&tm.sprites[FLOOR], 1, 1, {0.6, 0.6, 0.6, 1});
-
-    tm.sprites[BLOCK] = img_create(1, 1);
-    img_set(&tm.sprites[BLOCK], 1, 1, {0.4, 0.4, 0.4, 1});
-
-    tm.sprites[BUTTON] = img_create(1, 1);
-    img_set(&tm.sprites[BUTTON], 1, 1, {1, 1, 1, 1});
-
-    tm.sprites[PLAYER] = load_player_sprite();
+    add_player(0, 0);
 }
 
+void portal2d_init() {
+    tm.sprites[FLOOR] = img_create(1,1);
+    img_set(&tm.sprites[FLOOR], 0, 0, {0.6, 0.6, 0.6, 1});
+
+    tm.sprites[BLOCK] = img_create(1, 1);
+    img_set(&tm.sprites[BLOCK], 0, 0, {0.4, 0.4, 0.4, 1});
+
+    tm.sprites[BUTTON] = img_create(1, 1);
+    img_set(&tm.sprites[BUTTON], 0, 0, {1, 1, 1, 1});
+
+    tm.sprites[PLAYER] = load_player_sprite();
+
+    test_level();
+}
+
+bool running = true;
+
 void portal2d_key_input(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
+        running = false;
+        return;
+    }
+
     if (action == GLFW_PRESS) {
         switch (key) {
             case GLFW_KEY_UP: move_player({0, -1}); break;
             case GLFW_KEY_LEFT: move_player({-1, 0}); break;
             case GLFW_KEY_DOWN: move_player({0, 1}); break;
             case GLFW_KEY_RIGHT: move_player({1, 0}); break;
-            case GLFW_KEY_ENTER: editor_mode = !editor_mode; break;
-        }
-
-        if (editor_mode) {
-            switch (key) {
-                case GLFW_KEY_0: editor_set_portal(-1); break;
-                case GLFW_KEY_1: editor_set_portal(0); break;
-                case GLFW_KEY_2: editor_set_portal(1); break;
-                case GLFW_KEY_3: editor_set_portal(2); break;
-
-                case GLFW_KEY_F: editor_place_item(FLOOR); break;
-                case GLFW_KEY_B: editor_place_item(BLOCK); break;
-                case GLFW_KEY_P: editor_place_item(BUTTON); break;
-                case GLFW_KEY_X: editor_remove_item(); break;
-            }
         }
     }
 }
 
 static void portal2d_mouse_cursor_position(GLFWwindow* window, double xpos, double ypos) {
-    if (editor_mode) {
-        editor.mouse.x = xpos;
-        editor.mouse.y = ypos;
-        editor_while_dragging();
-    }
 }
 
 void portal2d_mouse_button(GLFWwindow* window, int button, int action, int mods) {
-    if (!editor_mode)
-        return;
-
-    if (action == GLFW_PRESS) {
-        if (button == GLFW_MOUSE_BUTTON_LEFT) {
-            editor_start_dragging();
-        }
-    } else if (action == GLFW_RELEASE) {
-        if (button == GLFW_MOUSE_BUTTON_LEFT) {
-            editor_stop_dragging();
-        }
-    }
 }
 
 void portal2d_update(float dt) {
-    // update animations
 }
 
 void portal2d_draw(Img *gfx) {
@@ -504,101 +379,13 @@ void portal2d_draw(Img *gfx) {
             }
         }
     }
-
-    if (editor_mode) {
-        img_draw_point(gfx, {10, 10}, {1, 0, 0, 1}, 5);
-    }
 }
 
-
-
-// ----------------------------------------------------------------------------------------
-//                             GAME INDEPENDENT STUFF
-// ----------------------------------------------------------------------------------------
-
-struct Timer {
-    std::chrono::time_point<std::chrono::high_resolution_clock> previous_timestamp;
-
-    void start() { previous_timestamp = std::chrono::high_resolution_clock::now(); }
-
-    float tick() {
-        auto now = std::chrono::high_resolution_clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - previous_timestamp).count();
-        previous_timestamp = now;
-        // if (ms > 0) {
-        //     std::cout << "fps: " << (1000.0/ms) << std::endl;
-        // }
-        return ms / 1000.f;
-    }
-
-    //     void sync(int ms) {
-    //         auto now = std::chrono::high_resolution_clock::now();
-    //         auto elapsed = now - previous_timestamp;
-    //         if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < ms) {
-    //             std::this_thread::sleep_for(std::chrono::milliseconds(ms) - elapsed);
-    //         }
-    //         previous_timestamp = now;
-    //     }
-};
-
-struct Texture {
-    GLuint id;
-    int w;
-    int h;
-    unsigned char* data;
-};
-
-Texture tex;
-bool running = true;
-
-Texture texture_create(int w, int h) {
-    Texture t;
-    glGenTextures(1, &t.id);
-    glBindTexture(GL_TEXTURE_2D, t.id);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    t.w = w;
-    t.h = h;
-    t.data = (unsigned char*)malloc(t.w * t.h * 3 * sizeof(unsigned char));
-    return t;
-}
-
-void texture_draw_from_image(Img* img) {
-    for (int y = 0; y < tex.h; ++y)
-        for (int x = 0; x < tex.w; ++x) {
-            RGBA color = img_get(img, x, y);
-            tex.data[y * tex.w * 3 + x * 3 + 0] = color.r * 255;
-            tex.data[y * tex.w * 3 + x * 3 + 1] = color.g * 255;
-            tex.data[y * tex.w * 3 + x * 3 + 2] = color.b * 255;
-        }
-
-    glBindTexture(GL_TEXTURE_2D, tex.id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tex.w, tex.h, 0, GL_RGB, GL_UNSIGNED_BYTE, tex.data);
-
-    glEnable(GL_TEXTURE_2D);
-
-    glBegin(GL_QUADS);
-    glTexCoord2d(0, 1);
-    glVertex2d(-1, -1);
-    glTexCoord2d(1, 1);
-    glVertex2d(1, -1);
-    glTexCoord2d(1, 0);
-    glVertex2d(1, 1);
-    glTexCoord2d(0, 0);
-    glVertex2d(-1, 1);
-    glEnd();
-    glDisable(GL_TEXTURE_2D);
-}
-
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
-        running = false;
-    }
-}
 
 const int window_width = 1024;
 const int window_height = 1024;
+int texture_width = 512;
+int texture_height = 512;
 
 int main(int argc, char** argv) {
     std::srand(std::time(0));
@@ -624,18 +411,18 @@ int main(int argc, char** argv) {
     glfwSetMouseButtonCallback(window, portal2d_mouse_button);
     // glfwSetScrollCallback(window, portal2d_mouse_button);
 
-    tex = texture_create(texture_width, texture_height);
+    gfx_init(texture_width, texture_height);
     portal2d_init();
-    Img game_image = img_create(tex.w, tex.h);
+    Img game_image = img_create(texture_width, texture_height);
 
     while (running) {
         float dt = timer_dt.tick();
         printf("fps: %.2f\n", 1 / dt);
-        portal2d_update(dt);
+        // portal2d_update(dt);
 
-        img_solid({});
-        portal2d_draw(&game_image);
-        texture_draw_from_image(&game_image);
+        gfx_clear();
+        portal2d_draw(gfx_get_framebuffer());
+        gfx_draw();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
