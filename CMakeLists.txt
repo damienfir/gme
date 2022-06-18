@@ -13,5 +13,6 @@ add_executable(world2
     gfx.cpp
     img.cpp
     math.cpp
+    perlin.cpp
     )
 target_link_libraries(world2 glfw GL GLU GLEW png)

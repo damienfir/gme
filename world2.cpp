@@ -7,6 +7,7 @@
 #include "math.hpp"
 #include "png.hpp"
 #include "utility.hpp"
+#include "perlin.h"
 
 enum ItemType {
     GRASS,
@@ -20,14 +21,14 @@ const int grid_size = grid_w * grid_h;
 ItemType type[grid_size];
 float height[grid_size];
 Vec3 albedo[grid_size];
-bool occlusion[grid_size];
+bool shadow[grid_size];
 
 Vec3 item_albedo[10];
 float sun_angle;
 unsigned long time_ms;
-float time_scaling = 10000;
+float time_scaling = 1000;
 float start_time_hours = 9.f;
-Period period_update_occlusion_map = period_every_hour();
+Period period_update_shadow_map = period_every_hour();
 
 const int window_width = 1024;
 const int window_height = 1024;
@@ -106,10 +107,13 @@ void init() {
         height[i] = 0;
     }
 
-    height[50 * grid_w + 50] = 10;
-    height[50 * grid_w + 51] = 10;
-    height[51 * grid_w + 51] = 10;
-    height[51 * grid_w + 50] = 10;
+    // TODO: make with multiple octaves
+    float* perlin = create_perlin_grid(grid_h, grid_w, 0.1);
+    for (int i = 0; i < grid_size; ++i) {
+        printf("%.2f\n", perlin[i]);
+        height[i] = perlin[i] * 8;
+    }
+    free(perlin);
 
     item_albedo[GRASS] = rgba_to_vec3(rgba_from_hex(0x606c38));
     item_albedo[WATER] = rgba_to_vec3(rgba_from_hex(0x457b9d));
@@ -126,7 +130,7 @@ bool is_occluded(Vec3 light_pos, Vec3 point_pos) {
         .direction = vec3_normalize(vec3_sub(light_pos, point_pos)),
     };
 
-    float step_size = 1;
+    float step_size = 2;
     Vec3 step = vec3_scale(ray.direction, step_size);
 
     while (vec3_norm(vec3_sub(ray.origin, light_pos)) > 1) {
@@ -148,7 +152,7 @@ bool is_occluded(Vec3 light_pos, Vec3 point_pos) {
     return false;
 }
 
-void update_occlusion_map() {
+void update_shadow_map() {
     Vec3 sun_vec = {cos(sun_angle), 0, sin(sun_angle)};
     Vec3 sun_pos_3d = vec3_scale(sun_vec, 1000);
     for (int y = 0; y < grid_h; ++y)
@@ -157,10 +161,10 @@ void update_occlusion_map() {
 
             Vec3 point_3d = {(float)x, (float)y, height[xy]};
             if (is_occluded(sun_pos_3d, point_3d)) {
-                occlusion[xy] = true;
+                shadow[xy] = true;
                 continue;
             }
-            occlusion[xy] = false;
+            shadow[xy] = false;
         }
 }
 
@@ -170,14 +174,16 @@ void update(float dt) {
 
     update_sun_angle();
 
-    if (period_update_occlusion_map.passed(dt_ms)) {
-        update_occlusion_map();
+    if (period_update_shadow_map.passed(dt_ms)) {
+        update_shadow_map();
     }
 }
 
 void pre_rendering() {
+    float height_range = 50;
     for (int i = 0; i < grid_size; ++i) {
-        albedo[i] = item_albedo[type[i]];
+        float height_color_scale = fmin(10, fmax(0, 1 + (height[i] / height_range)));
+        albedo[i] = vec3_scale(item_albedo[type[i]], height_color_scale);
     }
 }
 
@@ -195,7 +201,7 @@ void draw(Img* fb) {
             Vec3 illumination = ambient_light;
 
             // Vec3 point_3d = {(float)x, (float)y, item.height};
-            if (!occlusion[xy]) {
+            if (!shadow[xy]) {
                 float diffuse = fmax(0, vec3_dot(normal, sun_vec));
                 Vec3 sun_light = vec3_scale(sun_color, diffuse);
                 illumination = vec3_add(illumination, sun_light);
